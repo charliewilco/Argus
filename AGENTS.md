@@ -40,3 +40,4 @@
 ## Agent-Specific Instructions
 - Follow `SPEC.md` for current module responsibilities and build order.
 - Avoid adding TS path aliases; use workspace package imports instead.
+- Make sure you are following the conventions from Biome in `biome.json`

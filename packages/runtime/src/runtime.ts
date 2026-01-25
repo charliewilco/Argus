@@ -1,11 +1,11 @@
-import type { EventEnvelope } from "@argus/core/event";
-import type { Provider } from "@argus/core/provider";
-import type { TriggerDefinition } from "@argus/core/trigger";
-import type { TransformInput } from "@argus/core/runtimeTypes";
-import { createEventId } from "@argus/core/id";
 import type { Connection as CoreConnection } from "@argus/core/connection";
+import type { EventEnvelope } from "@argus/core/event";
 import type { EventStore as CoreEventStore } from "@argus/core/eventStore";
-import type { DeliveryJob, Queue as CoreQueue } from "@argus/core/queue";
+import { createEventId } from "@argus/core/id";
+import type { Provider } from "@argus/core/provider";
+import type { Queue as CoreQueue, DeliveryJob } from "@argus/core/queue";
+import type { TransformInput } from "@argus/core/runtimeTypes";
+import type { TriggerDefinition } from "@argus/core/trigger";
 
 // Re-export for convenience if consumers import from runtime
 export type RuntimeConnection = CoreConnection;

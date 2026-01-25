@@ -1,6 +1,6 @@
+import { Database } from "bun:sqlite";
 import type { EventEnvelope } from "@argus/core/event";
 import type { EventStore } from "@argus/core/eventStore";
-import { Database } from "bun:sqlite";
 
 export class SqliteEventStore implements EventStore {
 	private db: Database;

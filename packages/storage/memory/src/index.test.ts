@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { MemoryEventStore } from "./";
 import type { EventEnvelope } from "@argus/core/event";
+import { MemoryEventStore } from "./";
 
 function sampleEvent(id: string, dedupeKey: string): EventEnvelope {
 	return {
