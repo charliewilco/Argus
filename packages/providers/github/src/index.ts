@@ -16,6 +16,7 @@ export class GitHubProvider extends AbstractProvider {
 	constructor() {
 		super();
 		this.registerTrigger(issueCreatedTrigger());
+		this.registerTrigger(issuesUpdatedTrigger());
 	}
 
 	validateConnection(connection: unknown): asserts connection is Connection {
@@ -93,6 +94,86 @@ function issueCreatedTrigger(): TriggerDefinition {
 	};
 }
 
+type GitHubPollState = {
+	since?: string;
+};
+
+type GitHubIssuePollPayload = {
+	issue: GitHubIssueItem;
+	repoFullName?: string;
+};
+
+function issuesUpdatedTrigger(): TriggerDefinition<unknown, GitHubPollState> {
+	return {
+		provider: "github",
+		key: "issues.updated",
+		version: "1",
+		mode: "poll",
+		async setup() {
+			return {};
+		},
+		async teardown() {},
+		async poll(ctx) {
+			const auth = ctx.connection.auth as GitHubConnectionAuth | undefined;
+			const token = auth?.token;
+			const since =
+				ctx.state?.since ?? new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+			const payloads = await fetchIssuesUpdatedSince({
+				since,
+				token,
+				repoFullName: (ctx.connection.config as { repoFullName?: string } | undefined)
+					?.repoFullName,
+			});
+
+			return { state: { since: new Date().toISOString() }, payloads };
+		},
+		async transform(input: TransformInput): Promise<EventEnvelope[]> {
+			const payload = input.payload as GitHubIssuePollPayload;
+			const issue = payload.issue;
+			if (!issue || issue.pull_request) return [];
+
+			const repoFullName =
+				payload.repoFullName ?? parseRepoFullName(issue.repository_url);
+
+			const normalized = {
+				repoFullName,
+				issueNumber: issue.number,
+				title: issue.title,
+				userLogin: issue.user?.login,
+				url: issue.html_url,
+			};
+
+			const event: EventEnvelope = {
+				id: "",
+				type: "github.issue.updated",
+				occurredAt: issue.updated_at ?? new Date().toISOString(),
+				receivedAt: input.receivedAt,
+				provider: input.provider,
+				triggerKey: input.triggerKey,
+				triggerVersion: input.triggerVersion,
+				tenantId: input.connection.tenantId,
+				connectionId: input.connection.connectionId,
+				dedupeKey: "",
+				data: {
+					normalized,
+					raw: payload,
+				},
+				meta: input.meta ?? {},
+			};
+
+			return [event];
+		},
+		dedupe(event: EventEnvelope): string {
+			const raw = event.data?.raw as GitHubIssuePollPayload | undefined;
+			const issueId = raw?.issue?.id;
+			const updatedAt = raw?.issue?.updated_at;
+			if (issueId && updatedAt) return `${issueId}:${updatedAt}`;
+			return `${event.connectionId}:${event.occurredAt}`;
+		},
+	};
+}
+
 type GitHubIssueWebhook = {
 	action?: string;
 	issue?: {
@@ -108,3 +189,80 @@ type GitHubIssueWebhook = {
 		full_name?: string;
 	};
 };
+
+type GitHubIssueItem = {
+	id: number;
+	number: number;
+	title: string;
+	created_at?: string;
+	updated_at?: string;
+	html_url?: string;
+	repository_url?: string;
+	user?: { login?: string };
+	pull_request?: unknown;
+};
+
+function parseRepoFullName(url?: string): string | undefined {
+	if (!url) return undefined;
+	const match = url.match(/\/repos\/([^/]+\/[^/]+)$/);
+	return match?.[1];
+}
+
+async function fetchIssuesUpdatedSince(opts: {
+	since: string;
+	token?: string;
+	repoFullName?: string;
+}): Promise<GitHubIssuePollPayload[]> {
+	const baseUrl = opts.repoFullName
+		? `https://api.github.com/repos/${opts.repoFullName}/issues`
+		: "https://api.github.com/issues";
+
+	const params = new URLSearchParams();
+	params.set("since", opts.since);
+	params.set("state", "all");
+	params.set("sort", "updated");
+	params.set("direction", "asc");
+	params.set("per_page", "100");
+
+	const headers: Record<string, string> = {
+		accept: "application/vnd.github+json",
+		"user-agent": "argus",
+	};
+	if (opts.token) {
+		headers.authorization = `Bearer ${opts.token}`;
+	}
+
+	const results: GitHubIssuePollPayload[] = [];
+	let nextUrl: string | null = `${baseUrl}?${params.toString()}`;
+
+	while (nextUrl) {
+		const res = await fetch(nextUrl, { headers });
+		if (!res.ok) {
+			throw new Error(`GitHub poll failed: ${res.status}`);
+		}
+		const data = (await res.json()) as GitHubIssueItem[];
+		for (const issue of data) {
+			results.push({
+				issue,
+				repoFullName: opts.repoFullName ?? parseRepoFullName(issue.repository_url),
+			});
+		}
+
+		const link = res.headers.get("link");
+		nextUrl = link ? parseNextLink(link) : null;
+	}
+
+	return results;
+}
+
+function parseNextLink(linkHeader: string): string | null {
+	const parts = linkHeader.split(",");
+	for (const part of parts) {
+		const match = part.match(/<([^>]+)>\s*;\s*rel="([^"]+)"/);
+		if (!match) continue;
+		const url = match[1];
+		const rel = match[2];
+		if (rel === "next") return url;
+	}
+	return null;
+}

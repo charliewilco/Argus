@@ -147,6 +147,50 @@ export class Runtime {
 		}
 	}
 
+	async replay(filters?: {
+		since?: string;
+		until?: string;
+		tenantId?: string;
+		connectionId?: string;
+	}): Promise<number> {
+		const events = await this.eventStore.list(filters);
+		if (events.length === 0) return 0;
+
+		this.startDeliveryLoop();
+		for (const event of events) {
+			const job: DeliveryJob = {
+				id: crypto.randomUUID(),
+				eventId: event.id,
+				attempt: 1,
+				nextRunAt: Date.now(),
+			};
+			await this.queue.enqueue(job);
+		}
+
+		return events.length;
+	}
+
+	async replayDLQ(filters?: {
+		tenantId?: string;
+		connectionId?: string;
+	}): Promise<number> {
+		const entries = await this.eventStore.listDLQ(filters);
+		if (entries.length === 0) return 0;
+
+		this.startDeliveryLoop();
+		for (const entry of entries) {
+			const job: DeliveryJob = {
+				id: crypto.randomUUID(),
+				eventId: entry.eventId,
+				attempt: 1,
+				nextRunAt: Date.now(),
+			};
+			await this.queue.enqueue(job);
+		}
+
+		return entries.length;
+	}
+
 	private async runPollCycle(): Promise<void> {
 		for (const provider of this.providers.values()) {
 			for (const trigger of provider.getTriggers()) {

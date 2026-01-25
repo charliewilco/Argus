@@ -208,3 +208,74 @@ test("Runtime polls triggers and delivers events", async () => {
 
 	expect(delivered).toBe(1);
 });
+
+test("Runtime moves failed events to DLQ after max attempts", async () => {
+	const eventStore = new MemoryEventStore();
+	const runtime = new Runtime({
+		eventStore,
+		queue: new MemoryQueue(),
+		maxAttempts: 1,
+	});
+
+	const provider = new TestProvider();
+	runtime.registerProvider(provider);
+	runtime.registerConnection({
+		tenantId: "tenant",
+		connectionId: "conn",
+		provider: "test",
+		auth: {},
+	});
+
+	runtime.onEvent(() => {
+		throw new Error("boom");
+	});
+
+	await runtime.handleWebhook({
+		provider: "test",
+		triggerKey: "event",
+		body: { hello: "world" },
+		headers: {},
+		tenantId: "tenant",
+		connectionId: "conn",
+	});
+
+	await new Promise((resolve) => setTimeout(resolve, 400));
+	const dlq = await eventStore.listDLQ();
+	expect(dlq.length).toBe(1);
+});
+
+test("Runtime replays DLQ events", async () => {
+	const eventStore = new MemoryEventStore();
+	const runtime = new Runtime({
+		eventStore,
+		queue: new MemoryQueue(),
+	});
+
+	runtime.onEvent(() => {});
+
+	await eventStore.put({
+		id: "event_1",
+		type: "test.event",
+		occurredAt: new Date().toISOString(),
+		receivedAt: new Date().toISOString(),
+		provider: "test",
+		triggerKey: "event",
+		triggerVersion: "1",
+		tenantId: "tenant",
+		connectionId: "conn",
+		dedupeKey: "dedupe",
+		data: { raw: { hello: "world" } },
+		meta: {},
+	});
+	await eventStore.putDLQ("event_1", "failed");
+
+	let delivered = 0;
+	runtime.onEvent(() => {
+		delivered += 1;
+	});
+
+	await runtime.replayDLQ();
+	await new Promise((resolve) => setTimeout(resolve, 400));
+
+	expect(delivered).toBe(1);
+});

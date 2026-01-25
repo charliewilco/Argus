@@ -1,53 +1,174 @@
 import type { EventEnvelope } from "@argus/core/event";
 import type { EventStore } from "@argus/core/eventStore";
+import { Database } from "bun:sqlite";
 
 export class SqliteEventStore implements EventStore {
-	constructor() {
-		throw new Error("SqliteEventStore not implemented yet");
+	private db: Database;
+
+	constructor(opts?: { filename?: string }) {
+		const filename = opts?.filename ?? ":memory:";
+		this.db = new Database(filename);
+		this.db.exec(`
+			CREATE TABLE IF NOT EXISTS events (
+				id TEXT PRIMARY KEY,
+				type TEXT,
+				occurredAt TEXT,
+				receivedAt TEXT,
+				provider TEXT,
+				triggerKey TEXT,
+				triggerVersion TEXT,
+				tenantId TEXT,
+				connectionId TEXT,
+				dedupeKey TEXT,
+				data TEXT,
+				meta TEXT
+			);
+			CREATE INDEX IF NOT EXISTS events_dedupe
+				ON events(provider, connectionId, dedupeKey);
+			CREATE INDEX IF NOT EXISTS events_tenant
+				ON events(tenantId, connectionId);
+			CREATE TABLE IF NOT EXISTS deliveries (
+				eventId TEXT,
+				attempt INTEGER,
+				status TEXT,
+				error TEXT,
+				createdAt TEXT
+			);
+			CREATE TABLE IF NOT EXISTS dlq (
+				eventId TEXT PRIMARY KEY,
+				reason TEXT
+			);
+		`);
 	}
 
-	async put(_event: EventEnvelope): Promise<void> {
-		throw new Error("SqliteEventStore not implemented yet");
+	async put(event: EventEnvelope): Promise<void> {
+		this.db
+			.query(
+				`INSERT OR REPLACE INTO events (
+					id, type, occurredAt, receivedAt, provider, triggerKey, triggerVersion,
+					tenantId, connectionId, dedupeKey, data, meta
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			)
+			.run(
+				event.id,
+				event.type,
+				event.occurredAt,
+				event.receivedAt,
+				event.provider,
+				event.triggerKey,
+				event.triggerVersion,
+				event.tenantId,
+				event.connectionId,
+				event.dedupeKey,
+				JSON.stringify(event.data ?? {}),
+				JSON.stringify(event.meta ?? {}),
+			);
 	}
 
-	async get(_id: string): Promise<EventEnvelope | null> {
-		throw new Error("SqliteEventStore not implemented yet");
+	async get(id: string): Promise<EventEnvelope | null> {
+		const row = this.db
+			.query(`SELECT * FROM events WHERE id = ?`)
+			.get(id) as Record<string, unknown> | null;
+		return row ? this.rowToEvent(row) : null;
 	}
 
 	async hasDedupe(
-		_provider: string,
-		_connectionId: string,
-		_dedupeKey: string,
+		provider: string,
+		connectionId: string,
+		dedupeKey: string,
 	): Promise<boolean> {
-		throw new Error("SqliteEventStore not implemented yet");
+		const row = this.db
+			.query(
+				`SELECT 1 FROM events WHERE provider = ? AND connectionId = ? AND dedupeKey = ? LIMIT 1`,
+			)
+			.get(provider, connectionId, dedupeKey);
+		return Boolean(row);
 	}
 
 	async markDelivery(
-		_id: string,
-		_attempt: number,
-		_status: "delivered" | "failed",
-		_error?: string,
+		id: string,
+		attempt: number,
+		status: "delivered" | "failed",
+		error?: string,
 	): Promise<void> {
-		throw new Error("SqliteEventStore not implemented yet");
+		this.db
+			.query(
+				`INSERT INTO deliveries (eventId, attempt, status, error, createdAt)
+				 VALUES (?, ?, ?, ?, ?)`,
+			)
+			.run(id, attempt, status, error ?? null, new Date().toISOString());
 	}
 
-	async putDLQ(_id: string, _reason: string): Promise<void> {
-		throw new Error("SqliteEventStore not implemented yet");
+	async putDLQ(id: string, reason: string): Promise<void> {
+		this.db
+			.query(`INSERT OR REPLACE INTO dlq (eventId, reason) VALUES (?, ?)`)
+			.run(id, reason);
 	}
 
-	async listDLQ(_filters?: {
+	async listDLQ(filters?: {
 		tenantId?: string;
 		connectionId?: string;
 	}): Promise<Array<{ eventId: string; reason: string }>> {
-		throw new Error("SqliteEventStore not implemented yet");
+		const rows = this.db
+			.query(
+				`SELECT d.eventId as eventId, d.reason as reason
+				 FROM dlq d
+				 LEFT JOIN events e ON e.id = d.eventId
+				 WHERE (? IS NULL OR e.tenantId = ?)
+				   AND (? IS NULL OR e.connectionId = ?)`,
+			)
+			.all(
+				filters?.tenantId ?? null,
+				filters?.tenantId ?? null,
+				filters?.connectionId ?? null,
+				filters?.connectionId ?? null,
+			) as Array<{ eventId: string; reason: string }>;
+
+		return rows ?? [];
 	}
 
-	async list(_filters?: {
+	async list(filters?: {
 		since?: string;
 		until?: string;
 		tenantId?: string;
 		connectionId?: string;
 	}): Promise<EventEnvelope[]> {
-		throw new Error("SqliteEventStore not implemented yet");
+		const rows = this.db
+			.query(
+				`SELECT * FROM events
+				 WHERE (? IS NULL OR occurredAt >= ?)
+				   AND (? IS NULL OR occurredAt <= ?)
+				   AND (? IS NULL OR tenantId = ?)
+				   AND (? IS NULL OR connectionId = ?)`,
+			)
+			.all(
+				filters?.since ?? null,
+				filters?.since ?? null,
+				filters?.until ?? null,
+				filters?.until ?? null,
+				filters?.tenantId ?? null,
+				filters?.tenantId ?? null,
+				filters?.connectionId ?? null,
+				filters?.connectionId ?? null,
+			) as Record<string, unknown>[];
+
+		return rows.map((row) => this.rowToEvent(row));
+	}
+
+	private rowToEvent(row: Record<string, unknown>): EventEnvelope {
+		return {
+			id: String(row.id),
+			type: String(row.type ?? ""),
+			occurredAt: String(row.occurredAt ?? ""),
+			receivedAt: String(row.receivedAt ?? ""),
+			provider: String(row.provider ?? ""),
+			triggerKey: String(row.triggerKey ?? ""),
+			triggerVersion: String(row.triggerVersion ?? ""),
+			tenantId: String(row.tenantId ?? ""),
+			connectionId: String(row.connectionId ?? ""),
+			dedupeKey: String(row.dedupeKey ?? ""),
+			data: JSON.parse(String(row.data ?? "{}")),
+			meta: JSON.parse(String(row.meta ?? "{}")),
+		};
 	}
 }
