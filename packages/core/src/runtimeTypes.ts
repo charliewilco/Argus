@@ -29,6 +29,12 @@ export type PollContext<TConfig, TState> = {
 	triggerKey: string;
 };
 
+export type PollResult<TState> = {
+	state?: TState;
+	payloads?: unknown[];
+	meta?: Record<string, unknown>;
+};
+
 export type TransformInput = {
 	provider: string;
 	triggerKey: string;

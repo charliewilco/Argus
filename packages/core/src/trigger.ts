@@ -1,6 +1,7 @@
 import type { EventEnvelope } from "./event";
 import type {
 	PollContext,
+	PollResult,
 	SetupContext,
 	TeardownContext,
 	TransformInput,
@@ -21,7 +22,7 @@ export interface TriggerDefinition<TConfig = unknown, TState = unknown> {
 	teardown(ctx: TeardownContext<TState>): Promise<void>;
 
 	ingest?(ctx: WebhookContext<TConfig, TState>): Promise<void>;
-	poll?(ctx: PollContext<TConfig, TState>): Promise<{ state?: TState }>;
+	poll?(ctx: PollContext<TConfig, TState>): Promise<PollResult<TState> | void>;
 
 	transform(input: TransformInput): Promise<EventEnvelope[]>;
 	dedupe(event: EventEnvelope): string;

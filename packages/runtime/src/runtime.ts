@@ -15,12 +15,13 @@ export type RuntimeQueue = CoreQueue;
 const DEFAULT_MAX_ATTEMPTS = 5;
 const DELIVERY_LEASE_LIMIT = 10;
 const DELIVERY_TICK_MS = 250;
-const POLL_INTERVAL_MS = 30_000;
+const DEFAULT_POLL_INTERVAL_MS = 30_000;
 
 export class Runtime {
 	private eventStore: CoreEventStore;
 	private queue: CoreQueue;
 	private maxAttempts: number;
+	private pollIntervalMs: number;
 	private providers = new Map<string, Provider>();
 	private connections = new Map<string, CoreConnection>();
 	private triggerStates = new Map<string, unknown>();
@@ -32,10 +33,12 @@ export class Runtime {
 		eventStore: CoreEventStore;
 		queue: CoreQueue;
 		maxAttempts?: number;
+		pollIntervalMs?: number;
 	}) {
 		this.eventStore = opts.eventStore;
 		this.queue = opts.queue;
 		this.maxAttempts = opts.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
+		this.pollIntervalMs = opts.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
 	}
 
 	registerProvider(provider: Provider): void {
@@ -131,9 +134,10 @@ export class Runtime {
 
 	startPolling(): void {
 		if (this.pollingTimer !== null) return;
+		this.runPollCycle().catch(() => {});
 		this.pollingTimer = setInterval(() => {
 			this.runPollCycle().catch(() => {});
-		}, POLL_INTERVAL_MS) as unknown as number;
+		}, this.pollIntervalMs) as unknown as number;
 	}
 
 	stopPolling(): void {
@@ -169,6 +173,26 @@ export class Runtime {
 
 					if (result?.state !== undefined) {
 						this.triggerStates.set(stateKey, result.state);
+					}
+
+					const payloads = result?.payloads ?? [];
+					if (payloads.length === 0) continue;
+
+					for (const payload of payloads) {
+						const events = await this.transformAndPrepareEvents(
+							{
+								provider: provider.name,
+								triggerKey: trigger.key,
+								triggerVersion: trigger.version,
+								connection,
+								receivedAt: new Date().toISOString(),
+								payload,
+								meta: result?.meta,
+							},
+							trigger,
+						);
+
+						await this.persistAndQueue(events, trigger);
 					}
 				}
 			}

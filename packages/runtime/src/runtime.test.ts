@@ -55,6 +55,60 @@ function testTrigger(): TriggerDefinition {
 	};
 }
 
+class PollingProvider extends AbstractProvider {
+	name = "poller";
+	version = "0.1.0";
+
+	constructor() {
+		super();
+		this.registerTrigger(pollingTrigger());
+	}
+
+	validateConnection(connection: unknown): asserts connection is Connection {
+		if (!connection || typeof connection !== "object")
+			throw new Error("invalid");
+	}
+}
+
+function pollingTrigger(): TriggerDefinition<unknown, { done?: boolean }> {
+	return {
+		provider: "poller",
+		key: "poll.event",
+		version: "1",
+		mode: "poll",
+		async setup() {
+			return {};
+		},
+		async teardown() {},
+		async poll(ctx) {
+			if (ctx.state?.done) return { state: ctx.state };
+			return { state: { done: true }, payloads: [{ hello: "poll" }] };
+		},
+		async transform(input) {
+			return [
+				{
+					id: "",
+					type: "poll.event",
+					occurredAt: new Date().toISOString(),
+					receivedAt: input.receivedAt,
+					provider: input.provider,
+					triggerKey: input.triggerKey,
+					triggerVersion: input.triggerVersion,
+					tenantId: input.connection.tenantId,
+					connectionId: input.connection.connectionId,
+					dedupeKey: "",
+					data: { raw: input.payload },
+					meta: {},
+				},
+			];
+		},
+		dedupe(event) {
+			const payload = event.data?.raw as { hello?: string } | undefined;
+			return payload?.hello ?? "poll";
+		},
+	};
+}
+
 test("Runtime dedupes events", async () => {
 	const eventStore = new MemoryEventStore();
 	const runtime = new Runtime({
@@ -123,5 +177,34 @@ test("Runtime delivers queued events", async () => {
 	});
 
 	await new Promise((resolve) => setTimeout(resolve, 400));
+	expect(delivered).toBe(1);
+});
+
+test("Runtime polls triggers and delivers events", async () => {
+	const runtime = new Runtime({
+		eventStore: new MemoryEventStore(),
+		queue: new MemoryQueue(),
+		pollIntervalMs: 10,
+	});
+
+	const provider = new PollingProvider();
+	runtime.registerProvider(provider);
+	runtime.registerConnection({
+		tenantId: "tenant",
+		connectionId: "conn",
+		provider: "poller",
+		auth: {},
+	});
+
+	let delivered = 0;
+	runtime.onEvent(() => {
+		delivered += 1;
+	});
+
+	runtime.startPolling();
+
+	await new Promise((resolve) => setTimeout(resolve, 600));
+	runtime.stopPolling();
+
 	expect(delivered).toBe(1);
 });
