@@ -1,16 +1,16 @@
 {
-  "name": "@argus/example",
-  "version": "0.1.0",
-  "type": "module",
-  "dependencies": {
-    "@argus/runtime": "workspace:*",
-    "@argus/provider-github": "workspace:*",
-    "@argus/storage-memory": "workspace:*",
-    "@argus/queue-memory": "workspace:*"
-  },
-  "scripts": {
-    "build": "tsdown",
-    "dev": "bun run src/server.ts",
-    "test": "bun test"
-  }
+	"name": "@argus/example",
+	"version": "0.1.0",
+	"type": "module",
+	"dependencies": {
+		"@argus/runtime": "workspace:*",
+		"@argus/provider-github": "workspace:*",
+		"@argus/storage-memory": "workspace:*",
+		"@argus/queue-memory": "workspace:*"
+	},
+	"scripts": {
+		"build": "tsdown",
+		"dev": "bun run src/server.ts",
+		"test": "bun test"
+	}
 }

@@ -1,50 +1,50 @@
 {
-  "name": "@argus/core",
-  "version": "0.1.0",
-  "type": "module",
-  "exports": {
-    "./event": {
-      "types": "./dist/event.d.ts",
-      "import": "./dist/event.js"
-    },
-    "./trigger": {
-      "types": "./dist/trigger.d.ts",
-      "import": "./dist/trigger.js"
-    },
-    "./provider": {
-      "types": "./dist/provider.d.ts",
-      "import": "./dist/provider.js"
-    },
-    "./abstractProvider": {
-      "types": "./dist/abstractProvider.d.ts",
-      "import": "./dist/abstractProvider.js"
-    },
-    "./connection": {
-      "types": "./dist/connection.d.ts",
-      "import": "./dist/connection.js"
-    },
-    "./id": {
-      "types": "./dist/id.d.ts",
-      "import": "./dist/id.js"
-    },
-    "./eventStore": {
-      "types": "./dist/eventStore.d.ts",
-      "import": "./dist/eventStore.js"
-    },
-    "./queue": {
-      "types": "./dist/queue.d.ts",
-      "import": "./dist/queue.js"
-    },
-    "./runtimeTypes": {
-      "types": "./dist/runtimeTypes.d.ts",
-      "import": "./dist/runtimeTypes.js"
-    }
-  },
-  "files": [
-    "dist"
-  ],
-  "scripts": {
-    "build": "tsdown",
-    "test": "bun test"
-  }
+	"name": "@argus/core",
+	"version": "0.1.0",
+	"type": "module",
+	"exports": {
+		"./event": {
+			"types": "./dist/event.d.ts",
+			"import": "./dist/event.js"
+		},
+		"./trigger": {
+			"types": "./dist/trigger.d.ts",
+			"import": "./dist/trigger.js"
+		},
+		"./provider": {
+			"types": "./dist/provider.d.ts",
+			"import": "./dist/provider.js"
+		},
+		"./abstractProvider": {
+			"types": "./dist/abstractProvider.d.ts",
+			"import": "./dist/abstractProvider.js"
+		},
+		"./connection": {
+			"types": "./dist/connection.d.ts",
+			"import": "./dist/connection.js"
+		},
+		"./id": {
+			"types": "./dist/id.d.ts",
+			"import": "./dist/id.js"
+		},
+		"./eventStore": {
+			"types": "./dist/eventStore.d.ts",
+			"import": "./dist/eventStore.js"
+		},
+		"./queue": {
+			"types": "./dist/queue.d.ts",
+			"import": "./dist/queue.js"
+		},
+		"./runtimeTypes": {
+			"types": "./dist/runtimeTypes.d.ts",
+			"import": "./dist/runtimeTypes.js"
+		}
+	},
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "tsdown",
+		"test": "bun test"
+	}
 }
