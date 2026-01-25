@@ -30,7 +30,9 @@
       },
       "dependencies": {
         "@argus/core": "workspace:*",
+        "@argus/queue-memory": "workspace:*",
         "@argus/runtime": "workspace:*",
+        "@argus/storage-sqlite": "workspace:*",
       },
     },
     "packages/core": {

@@ -38,4 +38,18 @@ export class MemoryQueue implements Queue {
 	async fail(jobId: string, _error: string): Promise<void> {
 		this.inFlight.delete(jobId);
 	}
+
+	getStats(): { pending: number; inFlight: number; nextRunAt: number | null } {
+		let nextRunAt: number | null = null;
+		for (const job of this.pending) {
+			if (nextRunAt === null || job.nextRunAt < nextRunAt) {
+				nextRunAt = job.nextRunAt;
+			}
+		}
+		return {
+			pending: this.pending.length,
+			inFlight: this.inFlight.size,
+			nextRunAt,
+		};
+	}
 }

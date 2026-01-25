@@ -53,3 +53,43 @@ test("SqliteEventStore lists DLQ entries", async () => {
 	expect(entries.length).toBe(1);
 	expect(entries[0]?.eventId).toBe("event_1");
 });
+
+test("SqliteEventStore filters by normalized fields", async () => {
+	const store = new SqliteEventStore({ filename: ":memory:" });
+	await store.put({
+		...baseEvent,
+		id: "event_1",
+		data: { raw: {}, normalized: { repo: "a", count: 1 } },
+	});
+	await store.put({
+		...baseEvent,
+		id: "event_2",
+		data: { raw: {}, normalized: { repo: "b", count: 2 } },
+	});
+
+	const filtered = await store.list({ normalized: { repo: "a" } });
+	expect(filtered.length).toBe(1);
+	expect(filtered[0]?.id).toBe("event_1");
+});
+
+test("SqliteEventStore filters DLQ by connection", async () => {
+	const store = new SqliteEventStore({ filename: ":memory:" });
+	await store.put(baseEvent);
+	await store.put({
+		...baseEvent,
+		id: "event_2",
+		connectionId: "conn_2",
+	});
+	await store.putDLQ("event_1", "failed");
+	await store.putDLQ("event_2", "failed");
+
+	const entries = await store.listDLQ({ connectionId: "conn_2" });
+	expect(entries.length).toBe(1);
+	expect(entries[0]?.eventId).toBe("event_2");
+});
+
+test("SqliteEventStore returns null when event missing", async () => {
+	const store = new SqliteEventStore({ filename: ":memory:" });
+	const missing = await store.get("missing");
+	expect(missing).toBeNull();
+});

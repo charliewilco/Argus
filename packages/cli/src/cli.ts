@@ -2,19 +2,24 @@
 
 import { SqliteEventStore } from "@argus/storage-sqlite";
 import type { EventEnvelope } from "@argus/core/event";
+import { Runtime } from "@argus/runtime/runtime";
+import { MemoryQueue } from "@argus/queue-memory";
 import { pathToFileURL } from "node:url";
 import path from "node:path";
+import { access, writeFile } from "node:fs/promises";
 
 const USAGE = `argus <command> [options]
 
 Commands:
-  replay --since <iso> --until <iso> [--tenant <id>] [--connection <id>] [--handler <path>]
+  replay --since <iso> --until <iso> [--tenant <id>] [--connection <id>] --handler <path>
   dlq list [--tenant <id>] [--connection <id>]
-  dlq replay --event <id> [--handler <path>]
+  dlq replay --event <id> --handler <path>
+  scaffold handler <path>
 
 Options:
   --sqlite <path>   Path to SQLite DB (or set ARGUS_SQLITE_PATH)
   --handler <path>  Module exporting default or handleEvent(event)
+  --wait-ms <ms>    Max time to wait for delivery (default: 30000)
   --help            Show help
 `;
 
@@ -87,9 +92,11 @@ function printUsage(exitCode = 0): never {
 
 async function loadHandler(
 	flags: Flags,
-): Promise<((event: EventEnvelope) => Promise<void> | void) | null> {
+): Promise<(event: EventEnvelope) => Promise<void> | void> {
 	const handlerPath = flags.handler;
-	if (typeof handlerPath !== "string" || handlerPath.length === 0) return null;
+	if (typeof handlerPath !== "string" || handlerPath.length === 0) {
+		throw new Error("Missing required flag: --handler");
+	}
 
 	const resolved = path.isAbsolute(handlerPath)
 		? handlerPath
@@ -109,17 +116,68 @@ async function loadHandler(
 	return handler;
 }
 
+async function waitForQueueIdle(
+	queue: MemoryQueue,
+	timeoutMs: number,
+): Promise<void> {
+	const deadline = Date.now() + timeoutMs;
+
+	while (Date.now() < deadline) {
+		const stats = queue.getStats();
+		if (stats.pending === 0 && stats.inFlight === 0) return;
+
+		const now = Date.now();
+		const nextDelay =
+			stats.nextRunAt === null ? 100 : Math.max(25, stats.nextRunAt - now);
+		await new Promise((resolve) =>
+			setTimeout(resolve, Math.min(250, nextDelay)),
+		);
+	}
+
+	throw new Error("Timed out waiting for delivery to finish");
+}
+
+async function fileExists(targetPath: string): Promise<boolean> {
+	try {
+		await access(targetPath);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+async function handleScaffoldHandler(targetPath: string): Promise<void> {
+	const resolved = path.isAbsolute(targetPath)
+		? targetPath
+		: path.resolve(process.cwd(), targetPath);
+
+	if (await fileExists(resolved)) {
+		throw new Error(`file already exists: ${resolved}`);
+	}
+
+	const template = `export default async function handleEvent(event) {\n\tconsole.log(\"EVENT\", JSON.stringify(event, null, 2));\n}\n`;
+	await writeFile(resolved, template, "utf8");
+	process.stderr.write(`wrote ${resolved}\n`);
+}
+
 async function handleReplay(flags: Flags): Promise<void> {
 	const store = new SqliteEventStore({ filename: getSqlitePath(flags) });
 	const filters = buildFilters(flags);
 	const events = await store.list(filters);
 	const handler = await loadHandler(flags);
+	const queue = new MemoryQueue();
+	const runtime = new Runtime({ eventStore: store, queue });
+	runtime.onEvent(handler);
 
-	if (handler) {
-		for (const event of events) {
-			await handler(event);
-		}
+	const ids = events.map((event) => event.id);
+	await runtime.replayByIds(ids);
+	const waitMs =
+		typeof flags["wait-ms"] === "string" ? Number(flags["wait-ms"]) : 30_000;
+	if (!Number.isFinite(waitMs) || waitMs <= 0) {
+		throw new Error("Invalid --wait-ms value");
 	}
+	await waitForQueueIdle(queue, waitMs);
+	runtime.shutdown();
 
 	printJsonLines(events);
 	process.stderr.write(`replayed ${events.length} events\n`);
@@ -145,12 +203,30 @@ async function handleDlqReplay(flags: Flags): Promise<void> {
 		throw new Error(`event missing from store: ${eventId}`);
 	}
 	const handler = await loadHandler(flags);
-	if (handler) {
-		await handler(event);
+	const queue = new MemoryQueue();
+	const runtime = new Runtime({ eventStore: store, queue });
+	runtime.onEvent(handler);
+
+	await runtime.replayByIds([eventId]);
+	const waitMs =
+		typeof flags["wait-ms"] === "string" ? Number(flags["wait-ms"]) : 30_000;
+	if (!Number.isFinite(waitMs) || waitMs <= 0) {
+		throw new Error("Invalid --wait-ms value");
 	}
+	await waitForQueueIdle(queue, waitMs);
+	runtime.shutdown();
+
 	printJsonLines<EventEnvelope>([event]);
 	process.stderr.write(`replayed dlq event ${eventId}\n`);
 }
+
+export const __test__ = {
+	parseArgs,
+	requireStringFlag,
+	getSqlitePath,
+	buildFilters,
+	waitForQueueIdle,
+};
 
 async function main(): Promise<void> {
 	const { positionals, flags } = parseArgs(process.argv.slice(2));
@@ -172,6 +248,15 @@ async function main(): Promise<void> {
 
 	if (command === "dlq" && subcommand === "replay") {
 		await handleDlqReplay(flags);
+		return;
+	}
+
+	if (command === "scaffold" && subcommand === "handler") {
+		const target = positionals[2];
+		if (!target) {
+			throw new Error("Missing scaffold handler path");
+		}
+		await handleScaffoldHandler(target);
 		return;
 	}
 

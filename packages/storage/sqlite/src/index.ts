@@ -132,6 +132,7 @@ export class SqliteEventStore implements EventStore {
 		until?: string;
 		tenantId?: string;
 		connectionId?: string;
+		normalized?: Record<string, unknown>;
 	}): Promise<EventEnvelope[]> {
 		const rows = this.db
 			.query(
@@ -152,7 +153,10 @@ export class SqliteEventStore implements EventStore {
 				filters?.connectionId ?? null,
 			) as Record<string, unknown>[];
 
-		return rows.map((row) => this.rowToEvent(row));
+		const events = rows.map((row) => this.rowToEvent(row));
+		return events.filter((event) =>
+			this.matchesNormalized(event, filters?.normalized),
+		);
 	}
 
 	private rowToEvent(row: Record<string, unknown>): EventEnvelope {
@@ -170,5 +174,20 @@ export class SqliteEventStore implements EventStore {
 			data: JSON.parse(String(row.data ?? "{}")),
 			meta: JSON.parse(String(row.meta ?? "{}")),
 		};
+	}
+
+	private matchesNormalized(
+		event: EventEnvelope,
+		filters?: Record<string, unknown>,
+	): boolean {
+		if (!filters || Object.keys(filters).length === 0) return true;
+		const normalized = event.data?.normalized;
+		if (!normalized || typeof normalized !== "object") return false;
+		for (const [key, value] of Object.entries(filters)) {
+			if ((normalized as Record<string, unknown>)[key] !== value) {
+				return false;
+			}
+		}
+		return true;
 	}
 }

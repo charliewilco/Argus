@@ -27,5 +27,6 @@ export interface EventStore {
 		until?: string;
 		tenantId?: string;
 		connectionId?: string;
+		normalized?: Record<string, unknown>;
 	}): Promise<EventEnvelope[]>;
 }

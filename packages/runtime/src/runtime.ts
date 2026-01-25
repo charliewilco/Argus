@@ -22,6 +22,7 @@ export class Runtime {
 	private queue: CoreQueue;
 	private maxAttempts: number;
 	private pollIntervalMs: number;
+	private tenantScope?: string;
 	private providers = new Map<string, Provider>();
 	private connections = new Map<string, CoreConnection>();
 	private triggerStates = new Map<string, unknown>();
@@ -35,11 +36,13 @@ export class Runtime {
 		queue: CoreQueue;
 		maxAttempts?: number;
 		pollIntervalMs?: number;
+		tenantScope?: string;
 	}) {
 		this.eventStore = opts.eventStore;
 		this.queue = opts.queue;
 		this.maxAttempts = opts.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
 		this.pollIntervalMs = opts.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
+		this.tenantScope = opts.tenantScope;
 	}
 
 	registerProvider(provider: Provider): void {
@@ -47,6 +50,9 @@ export class Runtime {
 	}
 
 	registerConnection(connection: CoreConnection): void {
+		if (this.tenantScope && connection.tenantId !== this.tenantScope) {
+			throw new Error("connection tenant out of scope");
+		}
 		const provider = this.providers.get(connection.provider);
 		if (!provider) {
 			throw new Error(`Provider not registered: ${connection.provider}`);
@@ -84,11 +90,15 @@ export class Runtime {
 	async handleWebhook(input: {
 		provider: string;
 		triggerKey: string;
+		triggerVersion?: string;
 		body: unknown;
 		headers: Record<string, string>;
 		tenantId: string;
 		connectionId: string;
 	}): Promise<{ accepted: boolean; reason?: string }> {
+		if (this.tenantScope && input.tenantId !== this.tenantScope) {
+			return { accepted: false, reason: "tenant out of scope" };
+		}
 		const provider = this.providers.get(input.provider);
 		if (!provider) {
 			return { accepted: false, reason: `unknown provider: ${input.provider}` };
@@ -105,7 +115,11 @@ export class Runtime {
 			return { accepted: false, reason: "connection/provider mismatch" };
 		}
 
-		const trigger = this.resolveTrigger(provider, input.triggerKey);
+		const trigger = this.resolveTrigger(
+			provider,
+			input.triggerKey,
+			input.triggerVersion,
+		);
 		if (!trigger) {
 			return {
 				accepted: false,
@@ -166,13 +180,20 @@ export class Runtime {
 		}
 	}
 
+	shutdown(): void {
+		this.stopPolling();
+		this.stopDeliveryLoop();
+	}
+
 	async replay(filters?: {
 		since?: string;
 		until?: string;
 		tenantId?: string;
 		connectionId?: string;
+		normalized?: Record<string, unknown>;
 	}): Promise<number> {
-		const events = await this.eventStore.list(filters);
+		const scoped = this.applyTenantScope(filters);
+		const events = await this.eventStore.list(scoped);
 		if (events.length === 0) return 0;
 
 		this.startDeliveryLoop();
@@ -189,11 +210,36 @@ export class Runtime {
 		return events.length;
 	}
 
+	async replayByIds(eventIds: string[]): Promise<number> {
+		if (eventIds.length === 0) return 0;
+		this.startDeliveryLoop();
+
+		let count = 0;
+		for (const eventId of eventIds) {
+			const event = await this.eventStore.get(eventId);
+			if (!event) continue;
+			if (this.tenantScope && event.tenantId !== this.tenantScope) {
+				throw new Error("event tenant out of scope");
+			}
+			const job: DeliveryJob = {
+				id: crypto.randomUUID(),
+				eventId: event.id,
+				attempt: 1,
+				nextRunAt: Date.now(),
+			};
+			await this.queue.enqueue(job);
+			count += 1;
+		}
+
+		return count;
+	}
+
 	async replayDLQ(filters?: {
 		tenantId?: string;
 		connectionId?: string;
 	}): Promise<number> {
-		const entries = await this.eventStore.listDLQ(filters);
+		const scoped = this.applyTenantScope(filters);
+		const entries = await this.eventStore.listDLQ(scoped);
 		if (entries.length === 0) return 0;
 
 		this.startDeliveryLoop();
@@ -212,7 +258,7 @@ export class Runtime {
 
 	private async runPollCycle(): Promise<void> {
 		for (const provider of this.providers.values()) {
-			for (const trigger of provider.getTriggers()) {
+			for (const trigger of this.getLatestTriggers(provider)) {
 				if (!trigger.poll) continue;
 				if (trigger.mode !== "poll" && trigger.mode !== "hybrid") continue;
 
@@ -224,7 +270,11 @@ export class Runtime {
 						trigger.validateConfig(config);
 					}
 
-					const state = await this.ensureTriggerSetup(connection, trigger, config);
+					const state = await this.ensureTriggerSetup(
+						connection,
+						trigger,
+						config,
+					);
 					const result = await trigger.poll({
 						connection,
 						config,
@@ -387,8 +437,14 @@ export class Runtime {
 	private resolveTrigger(
 		provider: Provider,
 		triggerKey: string,
+		triggerVersion?: string,
 	): TriggerDefinition | undefined {
-		return provider.getTriggers().find((t) => t.key === triggerKey);
+		const matches = provider.getTriggers().filter((t) => t.key === triggerKey);
+		if (matches.length === 0) return undefined;
+		if (triggerVersion) {
+			return matches.find((t) => t.version === triggerVersion);
+		}
+		return this.selectLatestTrigger(matches);
 	}
 
 	private connectionKey(tenantId: string, connectionId: string): string {
@@ -400,6 +456,57 @@ export class Runtime {
 		trigger: TriggerDefinition,
 	): string {
 		return `${connection.tenantId}:${connection.connectionId}:${trigger.key}:${trigger.version}`;
+	}
+
+	private selectLatestTrigger(
+		triggers: TriggerDefinition[],
+	): TriggerDefinition {
+		return triggers.reduce((latest, current) =>
+			this.compareVersions(current.version, latest.version) > 0
+				? current
+				: latest,
+		);
+	}
+
+	private getLatestTriggers(provider: Provider): TriggerDefinition[] {
+		const byKey = new Map<string, TriggerDefinition[]>();
+		for (const trigger of provider.getTriggers()) {
+			const list = byKey.get(trigger.key) ?? [];
+			list.push(trigger);
+			byKey.set(trigger.key, list);
+		}
+
+		const latest: TriggerDefinition[] = [];
+		for (const list of byKey.values()) {
+			latest.push(this.selectLatestTrigger(list));
+		}
+		return latest;
+	}
+
+	private compareVersions(a: string, b: string): number {
+		const aParts = a.split(".").map((part) => Number.parseInt(part, 10));
+		const bParts = b.split(".").map((part) => Number.parseInt(part, 10));
+		const length = Math.max(aParts.length, bParts.length);
+
+		for (let i = 0; i < length; i += 1) {
+			const aVal = aParts[i] ?? 0;
+			const bVal = bParts[i] ?? 0;
+			if (aVal === bVal) continue;
+			return aVal > bVal ? 1 : -1;
+		}
+
+		return 0;
+	}
+
+	private applyTenantScope<T extends { tenantId?: string }>(
+		filters: T | undefined,
+	): T | undefined {
+		if (!this.tenantScope) return filters;
+		if (!filters) return { tenantId: this.tenantScope } as T;
+		if (filters.tenantId && filters.tenantId !== this.tenantScope) {
+			throw new Error("tenant out of scope");
+		}
+		return { ...filters, tenantId: this.tenantScope };
 	}
 
 	private async ensureTriggerSetup(

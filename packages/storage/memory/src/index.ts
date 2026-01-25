@@ -68,6 +68,7 @@ export class MemoryEventStore implements EventStore {
 		until?: string;
 		tenantId?: string;
 		connectionId?: string;
+		normalized?: Record<string, unknown>;
 	}): Promise<EventEnvelope[]> {
 		const results: EventEnvelope[] = [];
 		const sinceMs = filters?.since ? Date.parse(filters.since) : null;
@@ -77,6 +78,7 @@ export class MemoryEventStore implements EventStore {
 			if (filters?.tenantId && event.tenantId !== filters.tenantId) continue;
 			if (filters?.connectionId && event.connectionId !== filters.connectionId)
 				continue;
+			if (!this.matchesNormalized(event, filters?.normalized)) continue;
 
 			const occurredMs = Date.parse(event.occurredAt);
 			if (sinceMs !== null && occurredMs < sinceMs) continue;
@@ -94,5 +96,20 @@ export class MemoryEventStore implements EventStore {
 		dedupeKey: string,
 	): string {
 		return `${provider}:${connectionId}:${dedupeKey}`;
+	}
+
+	private matchesNormalized(
+		event: EventEnvelope,
+		filters?: Record<string, unknown>,
+	): boolean {
+		if (!filters || Object.keys(filters).length === 0) return true;
+		const normalized = event.data?.normalized;
+		if (!normalized || typeof normalized !== "object") return false;
+		for (const [key, value] of Object.entries(filters)) {
+			if ((normalized as Record<string, unknown>)[key] !== value) {
+				return false;
+			}
+		}
+		return true;
 	}
 }

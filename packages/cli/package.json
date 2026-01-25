@@ -16,6 +16,7 @@
 	"dependencies": {
 		"@argus/core": "workspace:*",
 		"@argus/runtime": "workspace:*",
+		"@argus/queue-memory": "workspace:*",
 		"@argus/storage-sqlite": "workspace:*"
 	},
 	"files": [

@@ -10,4 +10,4 @@ Event stores support:
 - dedupe lookup
 - delivery attempt tracking
 - DLQ listing
-- replay queries by time or connection filters
+- replay queries by time, connection, and normalized field filters

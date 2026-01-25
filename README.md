@@ -51,6 +51,7 @@ See `apps/example` for a Bun server wiring `Runtime` to a webhook route.
 ## Documentation
 - Spec and architecture details: `SPEC.md`
 - Contributor guide: `AGENTS.md`
+- Project docs: `docs/README.md`
 
 ## License
 TBD
