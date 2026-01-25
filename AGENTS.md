@@ -9,8 +9,13 @@
 
 ## Build, Test, and Development Commands
 - `bun install`: install workspace dependencies.
+- `bun run lint`: run Biome lint checks.
+- `bun run check`: run Biome formatting checks.
 - `bun test`: run tests for the current workspace (root runs the default test suite).
 - `bun test packages/core`: run tests scoped to a specific workspace directory.
+## CI
+- CI runs `bun run build`, `bun run lint`, `bun run check`, and `bun test` on pull requests and pushes to `main`.
+
 
 ## Coding Style & Naming Conventions
 - TypeScript, ESM-only (`"type": "module"`).

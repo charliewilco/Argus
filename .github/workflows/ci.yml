@@ -28,5 +28,11 @@ jobs:
       - name: Build
         run: bun run build
 
+      - name: Lint
+        run: bun run lint
+
+      - name: Check formatting
+        run: bun run check
+
       - name: Run tests
         run: bun test
