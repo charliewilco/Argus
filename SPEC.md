@@ -150,7 +150,7 @@ export type Connection = {
 
 ### 5.6 Event IDs
 `packages/core/src/id.ts`
-- `createEventId(provider, connectionId, dedupeKey)` → SHA-256
+- `createEventId(provider, tenantId, connectionId, dedupeKey)` → SHA-256
 - Implemented with `Bun.crypto.subtle`
 
 ## 6. Runtime (`@argus/runtime`)
@@ -200,7 +200,7 @@ Runtime does not host HTTP.
 
 Semantics:
 - At-least-once delivery
-- Dedupe on (provider, connectionId, dedupeKey)
+- Dedupe on (provider, tenantId, connectionId, dedupeKey)
 - No ordering guarantees
 
 ## 7. Storage
@@ -212,7 +212,12 @@ Semantics:
 export interface EventStore {
   put(event: EventEnvelope): Promise<void>
   get(id: string): Promise<EventEnvelope | null>
-  hasDedupe(provider: string, connectionId: string, dedupeKey: string): Promise<boolean>
+  hasDedupe(
+    provider: string,
+    tenantId: string,
+    connectionId: string,
+    dedupeKey: string
+  ): Promise<boolean>
 
   markDelivery(
     id: string,

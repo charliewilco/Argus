@@ -50,12 +50,14 @@ test("buildFilters maps flag names to filter fields", () => {
 		until: "2024-02-01",
 		tenant: "tenant",
 		connection: "conn",
+		normalized: '{"repo":"a"}',
 	});
 	expect(filters).toEqual({
 		since: "2024-01-01",
 		until: "2024-02-01",
 		tenantId: "tenant",
 		connectionId: "conn",
+		normalized: { repo: "a" },
 	});
 });
 

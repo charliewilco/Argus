@@ -11,7 +11,7 @@ import { SqliteEventStore } from "@argus/storage-sqlite";
 const USAGE = `argus <command> [options]
 
 Commands:
-  replay --since <iso> --until <iso> [--tenant <id>] [--connection <id>] --handler <path>
+  replay --since <iso> --until <iso> [--tenant <id>] [--connection <id>] [--normalized <json>] --handler <path>
   dlq list [--tenant <id>] [--connection <id>]
   dlq replay --event <id> --handler <path>
   scaffold handler <path>
@@ -20,6 +20,7 @@ Options:
   --sqlite <path>   Path to SQLite DB (or set ARGUS_SQLITE_PATH)
   --handler <path>  Module exporting default or handleEvent(event)
   --wait-ms <ms>    Max time to wait for delivery (default: 30000)
+  --normalized <json> Filter by data.normalized fields (exact match)
   --help            Show help
 `;
 
@@ -30,6 +31,7 @@ type ReplayFilters = {
 	until?: string;
 	tenantId?: string;
 	connectionId?: string;
+	normalized?: Record<string, unknown>;
 };
 
 function parseArgs(args: string[]): { positionals: string[]; flags: Flags } {
@@ -81,6 +83,20 @@ function buildFilters(flags: Flags): ReplayFilters {
 	if (typeof flags.tenant === "string") filters.tenantId = flags.tenant;
 	if (typeof flags.connection === "string")
 		filters.connectionId = flags.connection;
+	if (typeof flags.normalized === "string") {
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(flags.normalized);
+		} catch {
+			throw new Error("Invalid --normalized JSON");
+		}
+		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+			throw new Error("--normalized must be a JSON object");
+		}
+		filters.normalized = parsed as Record<string, unknown>;
+	} else if (flags.normalized === true) {
+		throw new Error("--normalized requires a JSON value");
+	}
 	return filters;
 }
 

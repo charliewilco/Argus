@@ -1,9 +1,10 @@
 export async function createEventId(
 	provider: string,
+	tenantId: string,
 	connectionId: string,
 	dedupeKey: string,
 ): Promise<string> {
-	const input = `${provider}:${connectionId}:${dedupeKey}`;
+	const input = `${provider}:${tenantId}:${connectionId}:${dedupeKey}`;
 	const encoder = new TextEncoder();
 	const data = encoder.encode(input);
 	const hashBuffer = await crypto.subtle.digest("SHA-256", data);

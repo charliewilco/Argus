@@ -17,7 +17,7 @@ Runtime can be constructed with a `tenantScope` option to enforce strict tenant 
 If multiple trigger versions share the same key, the runtime selects the latest version by default. Webhook callers can pass an explicit `triggerVersion` to target a specific version.
 
 ## Delivery
-- Dedupe happens before storage using `(provider, connectionId, dedupeKey)`.
+- Dedupe happens before storage using `(provider, tenantId, connectionId, dedupeKey)`.
 - Events are stored, then delivery jobs are queued.
 - Delivery retries with exponential backoff until `maxAttempts`.
 - Failed events are written to the DLQ.

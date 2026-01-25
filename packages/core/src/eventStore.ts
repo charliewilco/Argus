@@ -5,6 +5,7 @@ export interface EventStore {
 	get(id: string): Promise<EventEnvelope | null>;
 	hasDedupe(
 		provider: string,
+		tenantId: string,
 		connectionId: string,
 		dedupeKey: string,
 	): Promise<boolean>;

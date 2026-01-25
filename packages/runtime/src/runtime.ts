@@ -409,6 +409,7 @@ export class Runtime {
 			const dedupeKey = trigger.dedupe(event);
 			const hasDedupe = await this.eventStore.hasDedupe(
 				event.provider,
+				event.tenantId,
 				event.connectionId,
 				dedupeKey,
 			);
@@ -416,6 +417,7 @@ export class Runtime {
 
 			const id = await createEventId(
 				event.provider,
+				event.tenantId,
 				event.connectionId,
 				dedupeKey,
 			);

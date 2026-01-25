@@ -14,6 +14,7 @@ export class MemoryEventStore implements EventStore {
 		this.events.set(event.id, event);
 		const key = this.dedupeKey(
 			event.provider,
+			event.tenantId,
 			event.connectionId,
 			event.dedupeKey,
 		);
@@ -26,10 +27,13 @@ export class MemoryEventStore implements EventStore {
 
 	async hasDedupe(
 		provider: string,
+		tenantId: string,
 		connectionId: string,
 		dedupeKey: string,
 	): Promise<boolean> {
-		return this.dedupe.has(this.dedupeKey(provider, connectionId, dedupeKey));
+		return this.dedupe.has(
+			this.dedupeKey(provider, tenantId, connectionId, dedupeKey),
+		);
 	}
 
 	async markDelivery(
@@ -92,10 +96,11 @@ export class MemoryEventStore implements EventStore {
 
 	private dedupeKey(
 		provider: string,
+		tenantId: string,
 		connectionId: string,
 		dedupeKey: string,
 	): string {
-		return `${provider}:${connectionId}:${dedupeKey}`;
+		return `${provider}:${tenantId}:${connectionId}:${dedupeKey}`;
 	}
 
 	private matchesNormalized(

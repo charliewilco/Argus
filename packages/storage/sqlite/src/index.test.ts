@@ -20,10 +20,28 @@ test("SqliteEventStore stores and dedupes", async () => {
 	const store = new SqliteEventStore({ filename: ":memory:" });
 	await store.put(baseEvent);
 
-	expect(await store.hasDedupe("test", "conn", "dedupe")).toBe(true);
+	expect(await store.hasDedupe("test", "tenant", "conn", "dedupe")).toBe(true);
 
 	const fetched = await store.get("event_1");
 	expect(fetched?.id).toBe("event_1");
+});
+
+test("SqliteEventStore dedupes within tenant scope", async () => {
+	const store = new SqliteEventStore({ filename: ":memory:" });
+	await store.put(baseEvent);
+	await store.put({
+		...baseEvent,
+		id: "event_2",
+		tenantId: "tenant_b",
+	});
+
+	expect(await store.hasDedupe("test", "tenant", "conn", "dedupe")).toBe(true);
+	expect(await store.hasDedupe("test", "tenant_b", "conn", "dedupe")).toBe(
+		true,
+	);
+	expect(await store.hasDedupe("test", "tenant_c", "conn", "dedupe")).toBe(
+		false,
+	);
 });
 
 test("SqliteEventStore filters list by tenant and time", async () => {

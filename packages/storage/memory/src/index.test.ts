@@ -26,7 +26,24 @@ test("MemoryEventStore stores and dedupes", async () => {
 	await store.put(event);
 
 	expect(await store.get("e1")).not.toBeNull();
-	expect(await store.hasDedupe("test", "conn", "dedupe")).toBe(true);
+	expect(await store.hasDedupe("test", "tenant", "conn", "dedupe")).toBe(true);
+});
+
+test("MemoryEventStore dedupes within tenant scope", async () => {
+	const store = new MemoryEventStore();
+	await store.put(sampleEvent("e1", "dedupe"));
+	await store.put({
+		...sampleEvent("e2", "dedupe"),
+		tenantId: "tenant_b",
+	});
+
+	expect(await store.hasDedupe("test", "tenant", "conn", "dedupe")).toBe(true);
+	expect(await store.hasDedupe("test", "tenant_b", "conn", "dedupe")).toBe(
+		true,
+	);
+	expect(await store.hasDedupe("test", "tenant_c", "conn", "dedupe")).toBe(
+		false,
+	);
 });
 
 test("MemoryEventStore filters by normalized fields", async () => {

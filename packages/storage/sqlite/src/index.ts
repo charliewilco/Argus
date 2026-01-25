@@ -24,6 +24,8 @@ export class SqliteEventStore implements EventStore {
 				meta TEXT
 			);
 			CREATE INDEX IF NOT EXISTS events_dedupe
+				ON events(tenantId, provider, connectionId, dedupeKey);
+			CREATE INDEX IF NOT EXISTS events_dedupe_legacy
 				ON events(provider, connectionId, dedupeKey);
 			CREATE INDEX IF NOT EXISTS events_tenant
 				ON events(tenantId, connectionId);
@@ -74,14 +76,15 @@ export class SqliteEventStore implements EventStore {
 
 	async hasDedupe(
 		provider: string,
+		tenantId: string,
 		connectionId: string,
 		dedupeKey: string,
 	): Promise<boolean> {
 		const row = this.db
 			.query(
-				`SELECT 1 FROM events WHERE provider = ? AND connectionId = ? AND dedupeKey = ? LIMIT 1`,
+				`SELECT 1 FROM events WHERE provider = ? AND tenantId = ? AND connectionId = ? AND dedupeKey = ? LIMIT 1`,
 			)
-			.get(provider, connectionId, dedupeKey);
+			.get(provider, tenantId, connectionId, dedupeKey);
 		return Boolean(row);
 	}
 
