@@ -35,11 +35,16 @@ type ReplayFilters = {
 function parseArgs(args: string[]): { positionals: string[]; flags: Flags } {
 	const positionals: string[] = [];
 	const flags: Flags = {};
+	const booleanFlags = new Set(["help", "dry-run"]);
 
 	for (let i = 0; i < args.length; i += 1) {
 		const arg = args[i];
 		if (arg.startsWith("--")) {
 			const key = arg.slice(2);
+			if (booleanFlags.has(key)) {
+				flags[key] = true;
+				continue;
+			}
 			const next = args[i + 1];
 			if (!next || next.startsWith("--")) {
 				flags[key] = true;
