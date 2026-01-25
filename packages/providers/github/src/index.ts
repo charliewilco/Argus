@@ -117,13 +117,15 @@ function issuesUpdatedTrigger(): TriggerDefinition<unknown, GitHubPollState> {
 			const auth = ctx.connection.auth as GitHubConnectionAuth | undefined;
 			const token = auth?.token;
 			const since =
-				ctx.state?.since ?? new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+				ctx.state?.since ??
+				new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
 			const payloads = await fetchIssuesUpdatedSince({
 				since,
 				token,
-				repoFullName: (ctx.connection.config as { repoFullName?: string } | undefined)
-					?.repoFullName,
+				repoFullName: (
+					ctx.connection.config as { repoFullName?: string } | undefined
+				)?.repoFullName,
 			});
 
 			return { state: { since: new Date().toISOString() }, payloads };
@@ -244,7 +246,8 @@ async function fetchIssuesUpdatedSince(opts: {
 		for (const issue of data) {
 			results.push({
 				issue,
-				repoFullName: opts.repoFullName ?? parseRepoFullName(issue.repository_url),
+				repoFullName:
+					opts.repoFullName ?? parseRepoFullName(issue.repository_url),
 			});
 		}
 

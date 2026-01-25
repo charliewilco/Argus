@@ -4,7 +4,9 @@ import type { TriggerDefinition } from "@argus/core/trigger";
 
 function getPollingTrigger(): TriggerDefinition {
 	const provider = new GitHubProvider();
-	const trigger = provider.getTriggers().find((t) => t.key === "issues.updated");
+	const trigger = provider
+		.getTriggers()
+		.find((t) => t.key === "issues.updated");
 	if (!trigger) throw new Error("poll trigger missing");
 	return trigger;
 }
@@ -20,8 +22,7 @@ test("GitHub polling trigger paginates and returns payloads", async () => {
 
 		if (calls.length === 1) {
 			const headers = new Headers({
-				link:
-					"<https://api.github.com/repos/octo/repo/issues?page=2&per_page=100>; rel=\"next\"",
+				link: '<https://api.github.com/repos/octo/repo/issues?page=2&per_page=100>; rel="next"',
 			});
 			return new Response(
 				JSON.stringify([
@@ -66,7 +67,9 @@ test("GitHub polling trigger paginates and returns payloads", async () => {
 		});
 
 		expect(calls.length).toBe(2);
-		expect(calls[0]).toContain("https://api.github.com/repos/octo/repo/issues?");
+		expect(calls[0]).toContain(
+			"https://api.github.com/repos/octo/repo/issues?",
+		);
 		expect(calls[0]).toContain("since=");
 		expect(calls[0]).toContain("per_page=100");
 		expect(calls[1]).toBe(
