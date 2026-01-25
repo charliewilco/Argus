@@ -1,12 +1,10 @@
 import { expect, test } from "bun:test";
-import { GitHubProvider } from "./index";
 import type { TriggerDefinition } from "@argus/core/trigger";
+import { GitHubProvider } from "./index";
 
 function getWebhookTrigger(): TriggerDefinition {
 	const provider = new GitHubProvider();
-	const trigger = provider
-		.getTriggers()
-		.find((t) => t.key === "issue.created");
+	const trigger = provider.getTriggers().find((t) => t.key === "issue.created");
 	if (!trigger) throw new Error("webhook trigger missing");
 	return trigger;
 }
@@ -60,6 +58,7 @@ test("GitHub issue.created transform normalizes and dedupes", async () => {
 		url: "https://github.com/octo/repo/issues/45",
 	});
 
+	// biome-ignore lint/style/noNonNullAssertion: Test
 	const dedupe = trigger.dedupe(event!);
 	expect(dedupe).toBe("delivery-1");
 });
@@ -147,8 +146,8 @@ test("GitHub polling trigger surfaces fetch errors", async () => {
 	const trigger = getPollingTrigger();
 
 	const originalFetch = globalThis.fetch;
-	globalThis.fetch = (async () => new Response("nope", { status: 403 })) as
-		typeof fetch;
+	globalThis.fetch = (async () =>
+		new Response("nope", { status: 403 })) as unknown as typeof fetch;
 
 	try {
 		await expect(
@@ -237,6 +236,7 @@ test("GitHub polling trigger paginates and returns payloads", async () => {
 		);
 
 		expect(result?.payloads?.length).toBe(2);
+		// @ts-expect-error this is just an assertion test
 		expect(result?.payloads?.[0]?.repoFullName).toBe("octo/repo");
 		expect(result?.state).toBeTruthy();
 	} finally {

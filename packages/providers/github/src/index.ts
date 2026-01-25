@@ -1,8 +1,8 @@
 import { AbstractProvider } from "@argus/core/abstractProvider";
 import type { Connection } from "@argus/core/connection";
 import type { EventEnvelope } from "@argus/core/event";
-import type { TriggerDefinition } from "@argus/core/trigger";
 import type { TransformInput } from "@argus/core/runtimeTypes";
+import type { TriggerDefinition } from "@argus/core/trigger";
 
 export type GitHubConnectionAuth = {
 	token?: string;
@@ -238,7 +238,7 @@ async function fetchIssuesUpdatedSince(opts: {
 	let nextUrl: string | null = `${baseUrl}?${params.toString()}`;
 
 	while (nextUrl) {
-		const res = await fetch(nextUrl, { headers });
+		const res: Response = await fetch(nextUrl, { headers });
 		if (!res.ok) {
 			throw new Error(`GitHub poll failed: ${res.status}`);
 		}

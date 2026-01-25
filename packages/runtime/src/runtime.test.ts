@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
-import { Runtime } from "./runtime";
-import { MemoryEventStore } from "@argus/storage-memory";
-import { MemoryQueue } from "@argus/queue-memory";
-import type { TriggerDefinition } from "@argus/core/trigger";
 import { AbstractProvider } from "@argus/core/abstractProvider";
 import type { Connection } from "@argus/core/connection";
+import type { TriggerDefinition } from "@argus/core/trigger";
+import { MemoryQueue } from "@argus/queue-memory";
+import { MemoryEventStore } from "@argus/storage-memory";
+import { Runtime } from "./runtime";
 
 class TestProvider extends AbstractProvider {
 	name = "test";
@@ -764,7 +764,7 @@ test("Runtime rejects replay filters outside tenant scope", async () => {
 		tenantScope: "tenant_a",
 	});
 
-	await expect(
-		runtime.replay({ tenantId: "tenant_b" }),
-	).rejects.toThrow("tenant out of scope");
+	await expect(runtime.replay({ tenantId: "tenant_b" })).rejects.toThrow(
+		"tenant out of scope",
+	);
 });
