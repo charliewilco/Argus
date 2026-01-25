@@ -279,3 +279,97 @@ test("Runtime replays DLQ events", async () => {
 
 	expect(delivered).toBe(1);
 });
+
+test("Runtime calls setup once and teardown on unregister", async () => {
+	let setupCalls = 0;
+	let teardownCalls = 0;
+
+	class SetupProvider extends AbstractProvider {
+		name = "setup";
+		version = "0.1.0";
+
+		constructor() {
+			super();
+			this.registerTrigger(setupTrigger());
+		}
+
+		validateConnection(connection: unknown): asserts connection is Connection {
+			if (!connection || typeof connection !== "object")
+				throw new Error("invalid");
+		}
+	}
+
+	function setupTrigger(): TriggerDefinition {
+		return {
+			provider: "setup",
+			key: "event",
+			version: "1",
+			mode: "webhook",
+			async setup() {
+				setupCalls += 1;
+				return {};
+			},
+			async teardown() {
+				teardownCalls += 1;
+			},
+			async transform(input) {
+				return [
+					{
+						id: "",
+						type: "setup.event",
+						occurredAt: new Date().toISOString(),
+						receivedAt: input.receivedAt,
+						provider: input.provider,
+						triggerKey: input.triggerKey,
+						triggerVersion: input.triggerVersion,
+						tenantId: input.connection.tenantId,
+						connectionId: input.connection.connectionId,
+						dedupeKey: "",
+						data: { raw: input.payload },
+						meta: {},
+					},
+				];
+			},
+			dedupe() {
+				return "setup";
+			},
+		};
+	}
+
+	const runtime = new Runtime({
+		eventStore: new MemoryEventStore(),
+		queue: new MemoryQueue(),
+	});
+
+	runtime.registerProvider(new SetupProvider());
+	runtime.registerConnection({
+		tenantId: "tenant",
+		connectionId: "conn",
+		provider: "setup",
+		auth: {},
+	});
+
+	await runtime.handleWebhook({
+		provider: "setup",
+		triggerKey: "event",
+		body: { hello: "world" },
+		headers: {},
+		tenantId: "tenant",
+		connectionId: "conn",
+	});
+
+	await runtime.handleWebhook({
+		provider: "setup",
+		triggerKey: "event",
+		body: { hello: "world" },
+		headers: {},
+		tenantId: "tenant",
+		connectionId: "conn",
+	});
+
+	expect(setupCalls).toBe(1);
+
+	const removed = await runtime.unregisterConnection("tenant", "conn");
+	expect(removed).toBe(true);
+	expect(teardownCalls).toBe(1);
+});

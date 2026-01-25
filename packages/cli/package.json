@@ -15,7 +15,8 @@
 	"module": "./dist/cli.js",
 	"dependencies": {
 		"@argus/core": "workspace:*",
-		"@argus/runtime": "workspace:*"
+		"@argus/runtime": "workspace:*",
+		"@argus/storage-sqlite": "workspace:*"
 	},
 	"files": [
 		"dist"

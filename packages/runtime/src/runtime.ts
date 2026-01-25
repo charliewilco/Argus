@@ -25,6 +25,7 @@ export class Runtime {
 	private providers = new Map<string, Provider>();
 	private connections = new Map<string, CoreConnection>();
 	private triggerStates = new Map<string, unknown>();
+	private triggerSetupDone = new Set<string>();
 	private handlers: Array<(e: EventEnvelope) => Promise<void> | void> = [];
 	private deliveryTimer: number | null = null;
 	private pollingTimer: number | null = null;
@@ -55,6 +56,25 @@ export class Runtime {
 			this.connectionKey(connection.tenantId, connection.connectionId),
 			connection,
 		);
+	}
+
+	async unregisterConnection(
+		tenantId: string,
+		connectionId: string,
+	): Promise<boolean> {
+		const key = this.connectionKey(tenantId, connectionId);
+		const connection = this.connections.get(key);
+		if (!connection) return false;
+
+		const provider = this.providers.get(connection.provider);
+		if (provider) {
+			for (const trigger of provider.getTriggers()) {
+				await this.teardownTrigger(connection, trigger);
+			}
+		}
+
+		this.connections.delete(key);
+		return true;
 	}
 
 	onEvent(handler: (e: EventEnvelope) => Promise<void> | void): void {
@@ -98,8 +118,7 @@ export class Runtime {
 			trigger.validateConfig(config);
 		}
 
-		const stateKey = this.stateKey(connection, trigger);
-		const state = this.triggerStates.get(stateKey);
+		const state = await this.ensureTriggerSetup(connection, trigger, config);
 
 		if (trigger.ingest) {
 			await trigger.ingest({
@@ -205,8 +224,7 @@ export class Runtime {
 						trigger.validateConfig(config);
 					}
 
-					const stateKey = this.stateKey(connection, trigger);
-					const state = this.triggerStates.get(stateKey);
+					const state = await this.ensureTriggerSetup(connection, trigger, config);
 					const result = await trigger.poll({
 						connection,
 						config,
@@ -216,6 +234,7 @@ export class Runtime {
 					});
 
 					if (result?.state !== undefined) {
+						const stateKey = this.stateKey(connection, trigger);
 						this.triggerStates.set(stateKey, result.state);
 					}
 
@@ -381,6 +400,43 @@ export class Runtime {
 		trigger: TriggerDefinition,
 	): string {
 		return `${connection.tenantId}:${connection.connectionId}:${trigger.key}:${trigger.version}`;
+	}
+
+	private async ensureTriggerSetup(
+		connection: CoreConnection,
+		trigger: TriggerDefinition,
+		config: unknown,
+	): Promise<unknown> {
+		const stateKey = this.stateKey(connection, trigger);
+		if (!this.triggerSetupDone.has(stateKey)) {
+			const result = await trigger.setup({
+				connection,
+				config,
+			});
+			if (result?.state !== undefined) {
+				this.triggerStates.set(stateKey, result.state);
+			}
+			this.triggerSetupDone.add(stateKey);
+		}
+
+		return this.triggerStates.get(stateKey);
+	}
+
+	private async teardownTrigger(
+		connection: CoreConnection,
+		trigger: TriggerDefinition,
+	): Promise<void> {
+		const stateKey = this.stateKey(connection, trigger);
+		if (!this.triggerSetupDone.has(stateKey)) return;
+
+		const state = this.triggerStates.get(stateKey);
+		await trigger.teardown({
+			connection,
+			state,
+		});
+
+		this.triggerStates.delete(stateKey);
+		this.triggerSetupDone.delete(stateKey);
 	}
 
 	private computeBackoffMs(attempt: number): number {
