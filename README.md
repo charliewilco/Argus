@@ -1,4 +1,4 @@
-![](.github/workflows/header.png)
+![](.github/header.png)
 
 # Argus
 
