@@ -6,9 +6,16 @@
     "@argus/core": "workspace:*"
   },
   "exports": {
-    "./index": "./src/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
+    "build": "tsdown",
     "test": "bun test"
   }
 }

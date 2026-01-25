@@ -9,6 +9,7 @@
     "@argus/queue-memory": "workspace:*"
   },
   "scripts": {
+    "build": "tsdown",
     "dev": "bun run src/server.ts",
     "test": "bun test"
   }

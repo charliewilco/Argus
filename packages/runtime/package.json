@@ -5,10 +5,21 @@
   "dependencies": {
     "@argus/core": "workspace:*"
   },
-  "exports": {
-    "./runtime": "./src/runtime.ts"
+  "devDependencies": {
+    "@argus/storage-memory": "workspace:*",
+    "@argus/queue-memory": "workspace:*"
   },
+  "exports": {
+    "./runtime": {
+      "types": "./dist/runtime.d.ts",
+      "import": "./dist/runtime.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
+    "build": "tsdown",
     "test": "bun test"
   }
 }

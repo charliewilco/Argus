@@ -1,3 +1,5 @@
+![](.github/workflows/header.png)
+
 # Argus
 
 Argus is a Bun-native TypeScript monorepo for monitoring external systems via event triggers (webhooks + polling). It produces a common `EventEnvelope` and delivers events with dedupe, retries/backoff, DLQ, and replay.

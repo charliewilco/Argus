@@ -5,11 +5,23 @@
   "bin": {
     "argus": "./src/cli.ts"
   },
+  "exports": {
+    "./cli": {
+      "types": "./dist/cli.d.ts",
+      "import": "./dist/cli.js"
+    }
+  },
+  "types": "./dist/cli.d.ts",
+  "module": "./dist/cli.js",
   "dependencies": {
     "@argus/core": "workspace:*",
     "@argus/runtime": "workspace:*"
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
+    "build": "tsdown",
     "test": "bun test"
   }
 }

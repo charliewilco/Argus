@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { MemoryQueue } from "./index"
+import { MemoryQueue } from "./"
 
 test("MemoryQueue leases ready jobs", async () => {
   const queue = new MemoryQueue()

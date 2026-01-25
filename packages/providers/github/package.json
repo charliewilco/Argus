@@ -6,10 +6,20 @@
     "@argus/core": "workspace:*"
   },
   "exports": {
-    "./index": "./src/index.ts",
-    "./verifyGitHubSignature": "./src/verifyGitHubSignature.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./verifyGitHubSignature": {
+      "types": "./dist/verifyGitHubSignature.d.ts",
+      "import": "./dist/verifyGitHubSignature.js"
+    }
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
+    "build": "tsdown",
     "test": "bun test"
   }
 }
