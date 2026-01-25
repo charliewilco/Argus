@@ -1,12 +1,12 @@
 #!/usr/bin/env bun
 
-import { SqliteEventStore } from "@argus/storage-sqlite";
-import type { EventEnvelope } from "@argus/core/event";
-import { Runtime } from "@argus/runtime/runtime";
-import { MemoryQueue } from "@argus/queue-memory";
-import { pathToFileURL } from "node:url";
-import path from "node:path";
 import { access, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+import type { EventEnvelope } from "@argus/core/event";
+import { MemoryQueue } from "@argus/queue-memory";
+import { Runtime } from "@argus/runtime/runtime";
+import { SqliteEventStore } from "@argus/storage-sqlite";
 
 const USAGE = `argus <command> [options]
 
@@ -155,7 +155,7 @@ async function handleScaffoldHandler(targetPath: string): Promise<void> {
 		throw new Error(`file already exists: ${resolved}`);
 	}
 
-	const template = `export default async function handleEvent(event) {\n\tconsole.log(\"EVENT\", JSON.stringify(event, null, 2));\n}\n`;
+	const template = `export default async function handleEvent(event) {\n\tconsole.log("EVENT", JSON.stringify(event, null, 2));\n}\n`;
 	await writeFile(resolved, template, "utf8");
 	process.stderr.write(`wrote ${resolved}\n`);
 }
@@ -263,11 +263,13 @@ async function main(): Promise<void> {
 	printUsage(1);
 }
 
-try {
-	await main();
-} catch (err) {
-	const message = err instanceof Error ? err.message : "unknown error";
-	process.stderr.write(`${message}\n`);
-	process.stderr.write(`${USAGE}\n`);
-	process.exit(1);
+if (import.meta.main) {
+	try {
+		await main();
+	} catch (err) {
+		const message = err instanceof Error ? err.message : "unknown error";
+		process.stderr.write(`${message}\n`);
+		process.stderr.write(`${USAGE}\n`);
+		process.exit(1);
+	}
 }

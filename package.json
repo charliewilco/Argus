@@ -15,11 +15,13 @@
 		"test": "turbo run test",
 		"lint": "biome lint .",
 		"format": "biome format .",
-		"check": "biome check ."
+		"check": "biome check .",
+		"postinstall": "lefthook install"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.3.12",
 		"@types/bun": "latest",
+		"lefthook": "^2.0.15",
 		"tsdown": "latest",
 		"turbo": "^2.7.6",
 		"typescript": "^5.9.3"
