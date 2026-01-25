@@ -1,0 +1,19 @@
+{
+  "name": "@argus/core",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    "./event": "./src/event.ts",
+    "./trigger": "./src/trigger.ts",
+    "./provider": "./src/provider.ts",
+    "./abstractProvider": "./src/abstractProvider.ts",
+    "./connection": "./src/connection.ts",
+    "./id": "./src/id.ts",
+    "./eventStore": "./src/eventStore.ts",
+    "./queue": "./src/queue.ts",
+    "./runtimeTypes": "./src/runtimeTypes.ts"
+  },
+  "scripts": {
+    "test": "bun test"
+  }
+}

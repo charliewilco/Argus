@@ -1,0 +1,14 @@
+{
+  "name": "@argus/runtime",
+  "version": "0.1.0",
+  "type": "module",
+  "dependencies": {
+    "@argus/core": "workspace:*"
+  },
+  "exports": {
+    "./runtime": "./src/runtime.ts"
+  },
+  "scripts": {
+    "test": "bun test"
+  }
+}

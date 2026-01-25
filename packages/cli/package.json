@@ -1,0 +1,15 @@
+{
+  "name": "@argus/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "argus": "./src/cli.ts"
+  },
+  "dependencies": {
+    "@argus/core": "workspace:*",
+    "@argus/runtime": "workspace:*"
+  },
+  "scripts": {
+    "test": "bun test"
+  }
+}

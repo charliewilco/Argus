@@ -1,0 +1,15 @@
+{
+  "name": "argus",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "packages/storage/*",
+    "packages/queue/*",
+    "packages/providers/*",
+    "apps/*"
+  ],
+  "type": "module",
+  "scripts": {
+    "test": "bun test"
+  }
+}

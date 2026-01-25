@@ -1,0 +1,15 @@
+{
+  "name": "@argus/provider-github",
+  "version": "0.1.0",
+  "type": "module",
+  "dependencies": {
+    "@argus/core": "workspace:*"
+  },
+  "exports": {
+    "./index": "./src/index.ts",
+    "./verifyGitHubSignature": "./src/verifyGitHubSignature.ts"
+  },
+  "scripts": {
+    "test": "bun test"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "@argus/storage-memory",
+  "version": "0.1.0",
+  "type": "module",
+  "dependencies": {
+    "@argus/core": "workspace:*"
+  },
+  "exports": {
+    "./index": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "bun test"
+  }
+}
