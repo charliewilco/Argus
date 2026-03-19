@@ -37,13 +37,54 @@ Run a workspace test:
 bun test packages/core
 ```
 
+## Usage
+
+```typescript
+import { Runtime } from "@argus/runtime/runtime";
+import { MemoryEventStore } from "@argus/storage-memory";
+import { MemoryQueue } from "@argus/queue-memory";
+import { GitHubProvider } from "@argus/provider-github";
+
+const runtime = new Runtime({
+  eventStore: new MemoryEventStore(),
+  queue: new MemoryQueue(),
+});
+
+runtime.registerProvider(new GitHubProvider());
+
+runtime.registerConnection({
+  tenantId: "acme",
+  connectionId: "gh-main",
+  provider: "github",
+  auth: { token: process.env.GITHUB_TOKEN },
+  config: { repoFullName: "acme/backend" },
+});
+
+runtime.onEvent(async (event) => {
+  console.log(event.type, event.data.normalized);
+});
+
+// Poll for updated issues every 30 s
+runtime.startPolling();
+
+// Accept a webhook (call from your HTTP handler)
+await runtime.handleWebhook({
+  provider: "github",
+  triggerKey: "issue.created",
+  body: parsedBody,
+  headers: requestHeaders,
+  tenantId: "acme",
+  connectionId: "gh-main",
+});
+```
+
 ## Packages
 - `@argus/core`: core types, provider and trigger interfaces
 - `@argus/runtime`: runtime pipeline and delivery orchestration
 - `@argus/storage-*`: event store implementations
 - `@argus/queue-*`: delivery queue implementations
 - `@argus/provider-github`: example provider
-- `@argus/cli`: replay and DLQ tooling (planned)
+- `@argus/cli`: replay and DLQ tooling
 
 ## Example App
 See `apps/example` for a Bun server wiring `Runtime` to a webhook route.
