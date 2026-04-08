@@ -73,11 +73,21 @@ func (providerStub) ExecuteAction(context.Context, *oauth.Token, providers.Actio
 
 type pipelineStoreStub struct {
 	pipelines []*pipeline.Pipeline
+	saved     *pipeline.Pipeline
 }
 
-func (s pipelineStoreStub) SavePipeline(context.Context, *pipeline.Pipeline) error { return nil }
+func (s *pipelineStoreStub) SavePipeline(_ context.Context, value *pipeline.Pipeline) error {
+	if value == nil {
+		s.saved = nil
+		return nil
+	}
 
-func (s pipelineStoreStub) ListPipelines(context.Context, string) ([]*pipeline.Pipeline, error) {
+	copy := *value
+	s.saved = &copy
+	return nil
+}
+
+func (s *pipelineStoreStub) ListPipelines(context.Context, string) ([]*pipeline.Pipeline, error) {
 	return s.pipelines, nil
 }
 
@@ -162,7 +172,7 @@ func TestWebhookSkipsPipelinesBoundToOtherConnections(t *testing.T) {
 
 	events := &eventStoreStub{}
 	queues := &queueRecorder{}
-	matcher, err := triggers.NewTriggerMatcher(pipelineStoreStub{
+	matcher, err := triggers.NewTriggerMatcher(&pipelineStoreStub{
 		pipelines: []*pipeline.Pipeline{
 			{
 				ID:           "pipe_1",
@@ -183,7 +193,7 @@ func TestWebhookSkipsPipelinesBoundToOtherConnections(t *testing.T) {
 		OAuth:       oauthStub{},
 		Providers:   providerRegistryStub{provider: providerStub{event: envelope.Event{ID: "evt_1", TriggerKey: "github.push"}}},
 		Connections: &connectionServiceStub{},
-		Pipelines:   pipelineStoreStub{},
+		Pipelines:   &pipelineStoreStub{},
 		Events:      events,
 		Matcher:     matcher,
 		Queue:       queues,
@@ -226,7 +236,7 @@ func TestListConnectionsIsTenantScoped(t *testing.T) {
 			provider: providerStub{},
 		},
 		Connections: connectionService,
-		Pipelines:   pipelineStoreStub{},
+		Pipelines:   &pipelineStoreStub{},
 		Events:      &eventStoreStub{},
 		Matcher:     noOpMatcherStub{},
 		Queue:       &queueRecorder{},
@@ -264,7 +274,7 @@ func TestDeleteConnectionIsTenantScoped(t *testing.T) {
 		OAuth:       oauthStub{},
 		Providers:   providerRegistryStub{provider: providerStub{}},
 		Connections: connectionService,
-		Pipelines:   pipelineStoreStub{},
+		Pipelines:   &pipelineStoreStub{},
 		Events:      &eventStoreStub{},
 		Matcher:     noOpMatcherStub{},
 		Queue:       &queueRecorder{},
@@ -280,4 +290,42 @@ func TestDeleteConnectionIsTenantScoped(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, recorder.Code)
 	require.Equal(t, "tenant_1", connectionService.deleteTenantID)
 	require.Equal(t, "conn_2", connectionService.deleteConnectionID)
+}
+
+func TestCreatePipelineDefaultsToEnabledWhenOmitted(t *testing.T) {
+	t.Parallel()
+
+	pipelineStore := &pipelineStoreStub{}
+	handler, err := api.NewRouter(api.RouterOptions{
+		BaseURL:     "http://localhost:8080",
+		TenantID:    "tenant_1",
+		OAuth:       oauthStub{},
+		Providers:   providerRegistryStub{provider: providerStub{}},
+		Connections: &connectionServiceStub{},
+		Pipelines:   pipelineStore,
+		Events:      &eventStoreStub{},
+		Matcher:     noOpMatcherStub{},
+		Queue:       &queueRecorder{},
+		DLQ:         dlqStub{},
+	})
+	require.NoError(t, err)
+
+	request := httptest.NewRequest(http.MethodPost, "/pipelines", strings.NewReader(`{
+		"name":"New pipeline",
+		"trigger":{"key":"github.push"},
+		"steps":[]
+	}`))
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	handler.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusCreated, recorder.Code)
+	require.NotNil(t, pipelineStore.saved)
+	require.True(t, pipelineStore.saved.Enabled)
+
+	var created pipeline.Pipeline
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &created))
+	require.True(t, created.Enabled)
+	require.Equal(t, "tenant_1", created.TenantID)
 }

@@ -173,6 +173,12 @@ func TestGetTokenReturnsErrorWhenRefreshNeedsConfig(t *testing.T) {
 	manager, store := newManager(t)
 	ctx := context.Background()
 
+	expiringToken := &oauth2.Token{
+		AccessToken:  "old-access-token",
+		RefreshToken: "refresh-token",
+		TokenType:    "Bearer",
+		Expiry:       time.Now().UTC().Add(2 * time.Minute),
+	}
 	require.NoError(t, store.SaveConnection(ctx, &connections.Connection{
 		TenantID:     "tenant_1",
 		ConnectionID: "conn_1",
@@ -180,14 +186,10 @@ func TestGetTokenReturnsErrorWhenRefreshNeedsConfig(t *testing.T) {
 		Config:       map[string]any{},
 		CreatedAt:    time.Now().UTC(),
 	}))
-	require.NoError(t, manager.SaveToken(ctx, "tenant_1", "conn_1", &oauth2.Token{
-		AccessToken:  "old-access-token",
-		RefreshToken: "refresh-token",
-		TokenType:    "Bearer",
-		Expiry:       time.Now().UTC().Add(2 * time.Minute),
-	}))
+	require.NoError(t, manager.SaveToken(ctx, "tenant_1", "conn_1", expiringToken))
 
-	_, err := manager.GetToken(ctx, "tenant_1", "conn_1", nil)
+	token, err := manager.GetToken(ctx, "tenant_1", "conn_1", nil)
+	require.Nil(t, token)
 	require.EqualError(t, err, "oauth.GetToken: config is required to refresh token")
 }
 

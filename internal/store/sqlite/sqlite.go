@@ -505,6 +505,13 @@ func (s *Store) SavePipeline(ctx context.Context, value *pipeline.Pipeline) erro
 	}
 
 	value.Normalize()
+	if !value.HasExplicitEnabled() && !value.Enabled {
+		enabled, err := s.resolvePipelineEnabled(ctx, value.ID)
+		if err != nil {
+			return err
+		}
+		value.Enabled = enabled
+	}
 
 	triggerJSON, err := marshalJSON(value.Trigger)
 	if err != nil {
@@ -567,7 +574,6 @@ func (s *Store) resolvePipelineEnabled(ctx context.Context, id string) (bool, er
 		if errors.Is(err, sql.ErrNoRows) {
 			return true, nil
 		}
-
 		return false, fmt.Errorf("sqlite.SavePipeline: load existing enabled state: %w", err)
 	}
 
