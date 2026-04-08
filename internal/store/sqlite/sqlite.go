@@ -202,7 +202,6 @@ func (s *Store) SaveConnection(ctx context.Context, connection *connections.Conn
 		) VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT(tenant_id, connection_id) DO UPDATE SET
 			provider = excluded.provider,
-			encrypted_token = excluded.encrypted_token,
 			config_json = excluded.config_json,
 			created_at = excluded.created_at
 		`,
@@ -220,6 +219,39 @@ func (s *Store) SaveConnection(ctx context.Context, connection *connections.Conn
 	return nil
 }
 
+func (s *Store) EnsureConnection(ctx context.Context, tenantID, connectionID, provider string, createdAt time.Time) error {
+	if tenantID == "" || connectionID == "" || provider == "" {
+		return fmt.Errorf("sqlite.EnsureConnection: tenant ID, connection ID, and provider are required")
+	}
+
+	ts := createdAt.UTC()
+	if ts.IsZero() {
+		ts = time.Now().UTC()
+	}
+
+	_, err := s.db.ExecContext(
+		ctx,
+		`
+		INSERT INTO connections (
+			tenant_id, connection_id, provider, encrypted_token, config_json, created_at
+		) VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(tenant_id, connection_id) DO UPDATE SET
+			provider = excluded.provider
+		`,
+		tenantID,
+		connectionID,
+		provider,
+		[]byte{},
+		`{}`,
+		ts,
+	)
+	if err != nil {
+		return fmt.Errorf("sqlite.EnsureConnection: %w", err)
+	}
+
+	return nil
+}
+
 func (s *Store) GetConnection(ctx context.Context, tenantID, connectionID string) (*connections.Connection, error) {
 	row := s.db.QueryRowContext(
 		ctx,
@@ -232,22 +264,8 @@ func (s *Store) GetConnection(ctx context.Context, tenantID, connectionID string
 		connectionID,
 	)
 
-	var raw struct {
-		TenantID     string
-		ConnectionID string
-		Provider     string
-		ConfigJSON   string
-		CreatedAt    time.Time
-	}
-
-	if err := row.Scan(
-		&raw.TenantID,
-		&raw.ConnectionID,
-		&raw.Provider,
-		new([]byte),
-		&raw.ConfigJSON,
-		&raw.CreatedAt,
-	); err != nil {
+	connection, err := scanConnection(row)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, store.ErrNotFound
 		}
@@ -255,21 +273,93 @@ func (s *Store) GetConnection(ctx context.Context, tenantID, connectionID string
 		return nil, fmt.Errorf("sqlite.GetConnection: %w", err)
 	}
 
-	connection := &connections.Connection{
-		TenantID:     raw.TenantID,
-		ConnectionID: raw.ConnectionID,
-		Provider:     raw.Provider,
-		CreatedAt:    raw.CreatedAt.UTC(),
-	}
+	return connection, nil
+}
 
-	if err := unmarshalJSON(raw.ConfigJSON, &connection.Config); err != nil {
-		return nil, fmt.Errorf("sqlite.GetConnection: unmarshal config: %w", err)
-	}
-	if connection.Config == nil {
-		connection.Config = map[string]any{}
+func (s *Store) GetConnectionByID(ctx context.Context, connectionID string) (*connections.Connection, error) {
+	row := s.db.QueryRowContext(
+		ctx,
+		`
+		SELECT tenant_id, connection_id, provider, encrypted_token, config_json, created_at
+		FROM connections
+		WHERE connection_id = ?
+		`,
+		connectionID,
+	)
+
+	connection, err := scanConnection(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, store.ErrNotFound
+		}
+
+		return nil, fmt.Errorf("sqlite.GetConnectionByID: %w", err)
 	}
 
 	return connection, nil
+}
+
+func (s *Store) ListConnections(ctx context.Context, tenantID, providerID string) ([]*connections.Connection, error) {
+	query := strings.Builder{}
+	query.WriteString(`
+		SELECT tenant_id, connection_id, provider, encrypted_token, config_json, created_at
+		FROM connections
+		WHERE 1 = 1
+	`)
+
+	args := make([]any, 0, 2)
+	if tenantID != "" {
+		query.WriteString(" AND tenant_id = ?")
+		args = append(args, tenantID)
+	}
+	if providerID != "" {
+		query.WriteString(" AND provider = ?")
+		args = append(args, providerID)
+	}
+	query.WriteString(" ORDER BY created_at DESC, connection_id ASC")
+
+	rows, err := s.db.QueryContext(ctx, query.String(), args...)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite.ListConnections: %w", err)
+	}
+	defer rows.Close()
+
+	connectionsList := make([]*connections.Connection, 0)
+	for rows.Next() {
+		connection, scanErr := scanConnection(rows)
+		if scanErr != nil {
+			return nil, fmt.Errorf("sqlite.ListConnections: scan connection: %w", scanErr)
+		}
+		connectionsList = append(connectionsList, connection)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("sqlite.ListConnections: rows: %w", err)
+	}
+
+	return connectionsList, nil
+}
+
+func (s *Store) DeleteConnection(ctx context.Context, tenantID, connectionID string) error {
+	result, err := s.db.ExecContext(
+		ctx,
+		`DELETE FROM connections WHERE tenant_id = ? AND connection_id = ?`,
+		tenantID,
+		connectionID,
+	)
+	if err != nil {
+		return fmt.Errorf("sqlite.DeleteConnection: %w", err)
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("sqlite.DeleteConnection: rows affected: %w", err)
+	}
+	if affected == 0 {
+		return store.ErrNotFound
+	}
+
+	return nil
 }
 
 func (s *Store) SaveConnectionSecret(ctx context.Context, secret store.ConnectionSecret) error {
@@ -410,6 +500,13 @@ func (s *Store) DeleteOAuthState(ctx context.Context, key string) error {
 }
 
 func (s *Store) SavePipeline(ctx context.Context, value *pipeline.Pipeline) error {
+	value.Normalize()
+
+	triggerJSON, err := marshalJSON(value.Trigger)
+	if err != nil {
+		return fmt.Errorf("sqlite.SavePipeline: marshal trigger: %w", err)
+	}
+
 	stepsJSON, err := marshalJSON(value.Steps)
 	if err != nil {
 		return fmt.Errorf("sqlite.SavePipeline: marshal steps: %w", err)
@@ -419,12 +516,13 @@ func (s *Store) SavePipeline(ctx context.Context, value *pipeline.Pipeline) erro
 		ctx,
 		`
 		INSERT INTO pipelines (
-			id, tenant_id, name, trigger_key, connection_id, steps_json, enabled
-		) VALUES (?, ?, ?, ?, ?, ?, ?)
+			id, tenant_id, name, trigger_key, trigger_json, connection_id, steps_json, enabled
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			tenant_id = excluded.tenant_id,
 			name = excluded.name,
 			trigger_key = excluded.trigger_key,
+			trigger_json = excluded.trigger_json,
 			connection_id = excluded.connection_id,
 			steps_json = excluded.steps_json,
 			enabled = excluded.enabled
@@ -433,6 +531,7 @@ func (s *Store) SavePipeline(ctx context.Context, value *pipeline.Pipeline) erro
 		value.TenantID,
 		value.Name,
 		value.TriggerKey,
+		triggerJSON,
 		value.ConnectionID,
 		stepsJSON,
 		value.Enabled,
@@ -448,7 +547,7 @@ func (s *Store) GetPipeline(ctx context.Context, id string) (*pipeline.Pipeline,
 	row := s.db.QueryRowContext(
 		ctx,
 		`
-		SELECT id, tenant_id, name, trigger_key, connection_id, steps_json, enabled
+		SELECT id, tenant_id, name, trigger_key, trigger_json, connection_id, steps_json, enabled
 		FROM pipelines
 		WHERE id = ?
 		`,
@@ -468,16 +567,20 @@ func (s *Store) GetPipeline(ctx context.Context, id string) (*pipeline.Pipeline,
 }
 
 func (s *Store) ListPipelines(ctx context.Context, tenantID string) ([]*pipeline.Pipeline, error) {
-	rows, err := s.db.QueryContext(
-		ctx,
-		`
-		SELECT id, tenant_id, name, trigger_key, connection_id, steps_json, enabled
+	query := strings.Builder{}
+	query.WriteString(`
+		SELECT id, tenant_id, name, trigger_key, trigger_json, connection_id, steps_json, enabled
 		FROM pipelines
-		WHERE tenant_id = ?
-		ORDER BY id ASC
-		`,
-		tenantID,
-	)
+	`)
+
+	args := make([]any, 0, 1)
+	if tenantID != "" {
+		query.WriteString(" WHERE tenant_id = ?")
+		args = append(args, tenantID)
+	}
+	query.WriteString(" ORDER BY id ASC")
+
+	rows, err := s.db.QueryContext(ctx, query.String(), args...)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite.ListPipelines: %w", err)
 	}
@@ -497,6 +600,128 @@ func (s *Store) ListPipelines(ctx context.Context, tenantID string) ([]*pipeline
 	}
 
 	return pipelines, nil
+}
+
+func (s *Store) PushFailedJob(ctx context.Context, job store.FailedJob) error {
+	_, err := s.db.ExecContext(
+		ctx,
+		`
+		INSERT INTO dead_letter_jobs (
+			id, job_type, payload, reason, attempt_count, failed_at, replayed_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			job_type = excluded.job_type,
+			payload = excluded.payload,
+			reason = excluded.reason,
+			attempt_count = excluded.attempt_count,
+			failed_at = excluded.failed_at,
+			replayed_at = excluded.replayed_at
+		`,
+		job.ID,
+		job.JobType,
+		string(job.Payload),
+		job.Reason,
+		job.AttemptCount,
+		job.FailedAt.UTC(),
+		job.ReplayedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("sqlite.PushFailedJob: %w", err)
+	}
+
+	return nil
+}
+
+func (s *Store) GetFailedJob(ctx context.Context, id string) (*store.FailedJob, error) {
+	row := s.db.QueryRowContext(
+		ctx,
+		`
+		SELECT id, job_type, payload, reason, attempt_count, failed_at, replayed_at
+		FROM dead_letter_jobs
+		WHERE id = ?
+		`,
+		id,
+	)
+
+	job, err := scanFailedJob(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, store.ErrNotFound
+		}
+
+		return nil, fmt.Errorf("sqlite.GetFailedJob: %w", err)
+	}
+
+	return job, nil
+}
+
+func (s *Store) ListFailedJobs(ctx context.Context) ([]*store.FailedJob, error) {
+	rows, err := s.db.QueryContext(
+		ctx,
+		`
+		SELECT id, job_type, payload, reason, attempt_count, failed_at, replayed_at
+		FROM dead_letter_jobs
+		ORDER BY failed_at DESC, id ASC
+		`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite.ListFailedJobs: %w", err)
+	}
+	defer rows.Close()
+
+	jobs := make([]*store.FailedJob, 0)
+	for rows.Next() {
+		job, scanErr := scanFailedJob(rows)
+		if scanErr != nil {
+			return nil, fmt.Errorf("sqlite.ListFailedJobs: scan failed job: %w", scanErr)
+		}
+		jobs = append(jobs, job)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("sqlite.ListFailedJobs: rows: %w", err)
+	}
+
+	return jobs, nil
+}
+
+func (s *Store) MarkFailedJobReplayed(ctx context.Context, id string, replayedAt time.Time) error {
+	result, err := s.db.ExecContext(
+		ctx,
+		`UPDATE dead_letter_jobs SET replayed_at = ? WHERE id = ?`,
+		replayedAt.UTC(),
+		id,
+	)
+	if err != nil {
+		return fmt.Errorf("sqlite.MarkFailedJobReplayed: %w", err)
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("sqlite.MarkFailedJobReplayed: rows affected: %w", err)
+	}
+	if affected == 0 {
+		return store.ErrNotFound
+	}
+
+	return nil
+}
+
+func (s *Store) DeleteFailedJob(ctx context.Context, id string) error {
+	result, err := s.db.ExecContext(ctx, `DELETE FROM dead_letter_jobs WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("sqlite.DeleteFailedJob: %w", err)
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("sqlite.DeleteFailedJob: rows affected: %w", err)
+	}
+	if affected == 0 {
+		return store.ErrNotFound
+	}
+
+	return nil
 }
 
 type rowScanner interface {
@@ -548,12 +773,50 @@ func scanEvent(scanner rowScanner) (*envelope.Event, error) {
 	return event, nil
 }
 
+func scanConnection(scanner rowScanner) (*connections.Connection, error) {
+	var raw struct {
+		TenantID     string
+		ConnectionID string
+		Provider     string
+		ConfigJSON   string
+		CreatedAt    time.Time
+	}
+
+	if err := scanner.Scan(
+		&raw.TenantID,
+		&raw.ConnectionID,
+		&raw.Provider,
+		new([]byte),
+		&raw.ConfigJSON,
+		&raw.CreatedAt,
+	); err != nil {
+		return nil, err
+	}
+
+	connection := &connections.Connection{
+		TenantID:     raw.TenantID,
+		ConnectionID: raw.ConnectionID,
+		Provider:     raw.Provider,
+		CreatedAt:    raw.CreatedAt.UTC(),
+	}
+
+	if err := unmarshalJSON(raw.ConfigJSON, &connection.Config); err != nil {
+		return nil, err
+	}
+	if connection.Config == nil {
+		connection.Config = map[string]any{}
+	}
+
+	return connection, nil
+}
+
 func scanPipeline(scanner rowScanner) (*pipeline.Pipeline, error) {
 	var raw struct {
 		ID           string
 		TenantID     string
 		Name         string
 		TriggerKey   string
+		TriggerJSON  string
 		ConnectionID string
 		StepsJSON    string
 		Enabled      bool
@@ -564,6 +827,7 @@ func scanPipeline(scanner rowScanner) (*pipeline.Pipeline, error) {
 		&raw.TenantID,
 		&raw.Name,
 		&raw.TriggerKey,
+		&raw.TriggerJSON,
 		&raw.ConnectionID,
 		&raw.StepsJSON,
 		&raw.Enabled,
@@ -580,14 +844,41 @@ func scanPipeline(scanner rowScanner) (*pipeline.Pipeline, error) {
 		Enabled:      raw.Enabled,
 	}
 
+	if err := unmarshalJSON(raw.TriggerJSON, &value.Trigger); err != nil {
+		return nil, err
+	}
 	if err := unmarshalJSON(raw.StepsJSON, &value.Steps); err != nil {
 		return nil, err
 	}
-	if value.Steps == nil {
-		value.Steps = []pipeline.Step{}
-	}
+	value.Normalize()
 
 	return value, nil
+}
+
+func scanFailedJob(scanner rowScanner) (*store.FailedJob, error) {
+	var job store.FailedJob
+	var payload string
+
+	if err := scanner.Scan(
+		&job.ID,
+		&job.JobType,
+		&payload,
+		&job.Reason,
+		&job.AttemptCount,
+		&job.FailedAt,
+		&job.ReplayedAt,
+	); err != nil {
+		return nil, err
+	}
+
+	job.Payload = []byte(payload)
+	job.FailedAt = job.FailedAt.UTC()
+	if job.ReplayedAt != nil {
+		replayedAt := job.ReplayedAt.UTC()
+		job.ReplayedAt = &replayedAt
+	}
+
+	return &job, nil
 }
 
 func marshalJSON(value any) (string, error) {

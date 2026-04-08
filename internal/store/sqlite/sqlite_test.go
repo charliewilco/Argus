@@ -123,22 +123,27 @@ func TestStoreSaveAndGetConnectionAndPipeline(t *testing.T) {
 	require.Nil(t, gotConnection.Token)
 
 	value := &pipeline.Pipeline{
-		ID:           "pipe_1",
-		TenantID:     "tenant_1",
-		Name:         "New issue to Slack",
-		TriggerKey:   "github.issue.created",
+		ID:       "pipe_1",
+		TenantID: "tenant_1",
+		Name:     "New issue to Slack",
+		Trigger: pipeline.Trigger{
+			Key: "github.issues",
+			Conditions: map[string]any{
+				"event.action": "opened",
+			},
+		},
 		ConnectionID: "conn_1",
 		Enabled:      true,
 		Steps: []pipeline.Step{
 			{
-				ID:         "step_1",
-				Name:       "Notify Slack",
-				Action:     "slack.send_message",
-				Connection: "conn_slack",
-				Input: map[string]any{
-					"text": "{{event.normalized.title}}",
+				ID:   "step_1",
+				Name: "Notify Slack",
+				Type: pipeline.StepTypeAction,
+				Config: map[string]any{
+					"action":        "slack.send_message",
+					"connection_id": "conn_slack",
+					"text":          "{{event.title}}",
 				},
-				OnError: pipeline.ErrorBehaviorRetry,
 			},
 		},
 	}
@@ -149,7 +154,8 @@ func TestStoreSaveAndGetConnectionAndPipeline(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, value.Name, gotPipeline.Name)
 	require.Len(t, gotPipeline.Steps, 1)
-	require.Equal(t, value.Steps[0].Action, gotPipeline.Steps[0].Action)
+	require.Equal(t, value.Steps[0].Config["action"], gotPipeline.Steps[0].Config["action"])
+	require.Equal(t, value.Trigger.Key, gotPipeline.Trigger.Key)
 
 	pipelines, err := sqliteStore.ListPipelines(ctx, "tenant_1")
 	require.NoError(t, err)
