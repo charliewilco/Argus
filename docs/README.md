@@ -1,18 +1,8 @@
-# Argus Documentation
+# Documentation
 
-Welcome to Argus. This directory contains practical docs that mirror the current implementation.
+The repository is now on the Go implementation path. The most important design context currently lives in:
+- `README.md`
+- `SPEC.md`
+- `AGENTS.md`
 
-## Contents
-- [Overview](./overview.md)
-- [Core Types](./core.md)
-- [Runtime](./runtime.md)
-- [Storage](./storage.md)
-- [Queue](./queue.md)
-- [Providers](./providers.md)
-- [GitHub Provider](./providers/github.md)
-- [CLI](./cli.md)
-- [Example App](./example-app.md)
-
-## Notes
-- Spec-level details live in `SPEC.md`.
-- Contribution and workflow notes live in `AGENTS.md`.
+Additional package-level docs should be added as concrete subsystems land.

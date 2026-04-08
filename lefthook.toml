@@ -1,6 +1,0 @@
-[pre-commit]
-parallel = true
-
-[pre-commit.commands.format]
-run = "bunx @biomejs/biome check --no-errors-on-unmatched --files-ignore-unknown=true --colors=off {staged_files}"
-stage_fixed = true
