@@ -11,155 +11,69 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/charliewilco/argus/config"
 	"github.com/charliewilco/argus/internal/api"
-	"github.com/charliewilco/argus/internal/connections"
-	"github.com/charliewilco/argus/internal/dlq"
-	"github.com/charliewilco/argus/internal/oauth"
-	"github.com/charliewilco/argus/internal/queue"
-	"github.com/charliewilco/argus/internal/store/sqlite"
-	"github.com/charliewilco/argus/internal/triggers"
-	"github.com/charliewilco/argus/providers"
-	githubprovider "github.com/charliewilco/argus/providers/github"
+	"github.com/charliewilco/argus/internal/app"
+	"github.com/charliewilco/argus/internal/worker"
 )
 
 func main() {
-	if err := run(); err != nil {
-		log.Fatalf("argus server failed: %v", err)
-	}
-}
-
-func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	app, err := newServerApp(ctx)
+	runtime, err := app.New(ctx, app.Options{})
 	if err != nil {
-		return err
+		log.Fatalf("argus: initialize runtime: %v", err)
 	}
 	defer func() {
-		if closeErr := app.Close(); closeErr != nil {
-			log.Printf("argus server close failed: %v", closeErr)
+		if closeErr := runtime.Close(); closeErr != nil {
+			log.Printf("argus: runtime close failed: %v", closeErr)
 		}
 	}()
 
-	return app.Run(ctx)
-}
-
-type serverApp struct {
-	httpServer *http.Server
-	closeStore func() error
-}
-
-func newServerApp(ctx context.Context) (*serverApp, error) {
-	cfg, err := config.Load()
-	if err != nil {
-		return nil, fmt.Errorf("cmd.argus.newServerApp: load config: %w", err)
-	}
-
-	store, err := sqlite.Open(ctx, cfg.DatabaseURL)
-	if err != nil {
-		return nil, fmt.Errorf("cmd.argus.newServerApp: open store: %w", err)
-	}
-
-	githubClient, err := githubprovider.NewProvider(githubprovider.Config{
-		ClientID:      cfg.GitHub.ClientID,
-		ClientSecret:  cfg.GitHub.ClientSecret,
-		BaseURL:       cfg.BaseURL,
-		WebhookSecret: cfg.GitHub.WebhookSecret,
+	router, err := api.NewRouter(api.RouterOptions{
+		BaseURL:     runtime.Config.BaseURL,
+		TenantID:    runtime.Config.TenantID,
+		OAuth:       runtime.OAuth,
+		Providers:   runtime.Providers,
+		Connections: runtime.Connections,
+		Pipelines:   runtime.Store,
+		Events:      runtime.Store,
+		Matcher:     runtime.Matcher,
+		Queue:       runtime.Queue,
+		DLQ:         runtime.DLQ,
 	})
 	if err != nil {
-		_ = store.Close()
-		return nil, fmt.Errorf("cmd.argus.newServerApp: init github provider: %w", err)
+		log.Fatalf("argus: create router: %v", err)
 	}
 
-	providerRegistry, err := providers.NewRegistry(githubClient)
+	executionWorker, err := worker.New(runtime.Queue, runtime.Store, runtime.Executor, runtime.DLQ, log.Default(), nil)
 	if err != nil {
-		_ = store.Close()
-		return nil, fmt.Errorf("cmd.argus.newServerApp: init provider registry: %w", err)
+		log.Fatalf("argus: create worker: %v", err)
 	}
 
-	oauthManager, err := oauth.NewManager(store, oauth.Options{SecretKey: cfg.SecretKey})
-	if err != nil {
-		_ = store.Close()
-		return nil, fmt.Errorf("cmd.argus.newServerApp: init oauth manager: %w", err)
-	}
-
-	connectionService, err := connections.NewService(store, oauthManager, providerRegistry, time.Now)
-	if err != nil {
-		_ = store.Close()
-		return nil, fmt.Errorf("cmd.argus.newServerApp: init connection service: %w", err)
-	}
-
-	jobQueue := queue.NewMemoryQueue()
-	triggerMatcher, err := triggers.NewTriggerMatcher(store)
-	if err != nil {
-		_ = store.Close()
-		return nil, fmt.Errorf("cmd.argus.newServerApp: init trigger matcher: %w", err)
-	}
-
-	dlqStore, err := dlq.NewStore(store, jobQueue, time.Now)
-	if err != nil {
-		_ = store.Close()
-		return nil, fmt.Errorf("cmd.argus.newServerApp: init dlq store: %w", err)
-	}
-
-	handler, err := api.NewRouter(api.RouterOptions{
-		BaseURL:     cfg.BaseURL,
-		TenantID:    cfg.TenantID,
-		Now:         time.Now,
-		OAuth:       oauthManager,
-		Providers:   providerRegistry,
-		Connections: connectionService,
-		Pipelines:   store,
-		Events:      store,
-		Matcher:     triggerMatcher,
-		Queue:       jobQueue,
-		DLQ:         dlqStore,
-	})
-	if err != nil {
-		_ = store.Close()
-		return nil, fmt.Errorf("cmd.argus.newServerApp: init router: %w", err)
-	}
-
-	return &serverApp{
-		httpServer: &http.Server{
-			Addr:    fmt.Sprintf(":%d", cfg.Port),
-			Handler: handler,
-		},
-		closeStore: store.Close,
-	}, nil
-}
-
-func (a *serverApp) Run(ctx context.Context) error {
-	errCh := make(chan error, 1)
 	go func() {
-		if err := a.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			errCh <- fmt.Errorf("cmd.argus.Run: listen and serve: %w", err)
-			return
+		if runErr := executionWorker.Run(runtime.Context); runErr != nil && !errors.Is(runErr, context.Canceled) {
+			log.Printf("argus: worker stopped with error: %v", runErr)
 		}
-		errCh <- nil
 	}()
 
-	select {
-	case err := <-errCh:
-		return err
-	case <-ctx.Done():
+	server := &http.Server{
+		Addr:              fmt.Sprintf(":%d", runtime.Config.Port),
+		Handler:           router,
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	if err := a.httpServer.Shutdown(shutdownCtx); err != nil {
-		return fmt.Errorf("cmd.argus.Run: shutdown: %w", err)
+	go func() {
+		<-runtime.Context.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if shutdownErr := server.Shutdown(shutdownCtx); shutdownErr != nil {
+			log.Printf("argus: graceful shutdown failed: %v", shutdownErr)
+		}
+	}()
+
+	log.Printf("argus listening on %s", server.Addr)
+	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Fatalf("argus: serve: %v", err)
 	}
-
-	return <-errCh
-}
-
-func (a *serverApp) Close() error {
-	if a == nil || a.closeStore == nil {
-		return nil
-	}
-
-	return a.closeStore()
 }
