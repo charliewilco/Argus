@@ -132,7 +132,7 @@ func TestServiceGetDecryptedTokenUsesProviderOAuthConfig(t *testing.T) {
 	t.Parallel()
 
 	store := &connectionStoreStub{
-		connectionByID: &connections.Connection{
+		connectionByTenant: &connections.Connection{
 			TenantID:     "tenant_1",
 			ConnectionID: "conn_1",
 			Provider:     "github",
@@ -149,7 +149,7 @@ func TestServiceGetDecryptedTokenUsesProviderOAuthConfig(t *testing.T) {
 	}, nil)
 	require.NoError(t, err)
 
-	token, err := service.GetDecryptedToken(context.Background(), "conn_1")
+	token, err := service.GetDecryptedToken(context.Background(), "tenant_1", "conn_1")
 	require.NoError(t, err)
 	require.Equal(t, "token", token.AccessToken)
 	require.NotNil(t, tokenReader.cfg)

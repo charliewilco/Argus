@@ -21,11 +21,11 @@ type connectionStub struct {
 	token      oauth.Token
 }
 
-func (s *connectionStub) GetConnection(_ context.Context, _ string) (connections.Connection, error) {
+func (s *connectionStub) GetConnection(_ context.Context, _, _ string) (connections.Connection, error) {
 	return s.connection, nil
 }
 
-func (s *connectionStub) GetDecryptedToken(_ context.Context, _ string) (*oauth.Token, error) {
+func (s *connectionStub) GetDecryptedToken(_ context.Context, _, _ string) (*oauth.Token, error) {
 	return &s.token, nil
 }
 
@@ -65,7 +65,7 @@ func TestDispatcherReturnsTypedErrorForExpiredToken(t *testing.T) {
 
 	_, err = dispatcher.Dispatch(context.Background(), map[string]any{
 		"action": "github.noop",
-	}, "conn_1", nil)
+	}, "tenant_1", "conn_1", nil)
 	require.Error(t, err)
 	require.ErrorIs(t, err, actions.ErrTokenExpired)
 

@@ -78,8 +78,8 @@ func (s *Service) CreateConnection(ctx context.Context, connection Connection) e
 	return nil
 }
 
-func (s *Service) GetConnection(ctx context.Context, id string) (Connection, error) {
-	connection, err := s.store.GetConnectionByID(ctx, id)
+func (s *Service) GetConnection(ctx context.Context, tenantID, id string) (Connection, error) {
+	connection, err := s.store.GetConnection(ctx, tenantID, id)
 	if err != nil {
 		return Connection{}, fmt.Errorf("connections.GetConnection: %w", err)
 	}
@@ -117,8 +117,8 @@ func (s *Service) DeleteConnection(ctx context.Context, tenantID, id string) err
 	return nil
 }
 
-func (s *Service) GetDecryptedToken(ctx context.Context, id string) (*oauth2.Token, error) {
-	connection, err := s.store.GetConnectionByID(ctx, id)
+func (s *Service) GetDecryptedToken(ctx context.Context, tenantID, id string) (*oauth2.Token, error) {
+	connection, err := s.store.GetConnection(ctx, tenantID, id)
 	if err != nil {
 		return nil, fmt.Errorf("connections.GetDecryptedToken: load connection: %w", err)
 	}

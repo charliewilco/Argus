@@ -15,8 +15,8 @@ import (
 var ErrTokenExpired = errors.New("actions: token expired")
 
 type connectionReader interface {
-	GetConnection(ctx context.Context, id string) (connections.Connection, error)
-	GetDecryptedToken(ctx context.Context, id string) (*oauth2.Token, error)
+	GetConnection(ctx context.Context, tenantID, id string) (connections.Connection, error)
+	GetDecryptedToken(ctx context.Context, tenantID, id string) (*oauth2.Token, error)
 }
 
 type providerRegistry interface {
@@ -68,17 +68,17 @@ func NewDispatcher(connections connectionReader, providers providerRegistry, now
 	}, nil
 }
 
-func (d *Dispatcher) Dispatch(ctx context.Context, stepConfig map[string]any, connectionID string, event *envelope.Event) (providers.ActionResult, error) {
+func (d *Dispatcher) Dispatch(ctx context.Context, stepConfig map[string]any, tenantID, connectionID string, event *envelope.Event) (providers.ActionResult, error) {
 	if connectionID == "" {
 		return providers.ActionResult{}, fmt.Errorf("actions.Dispatch: connection ID is required")
 	}
 
-	connection, err := d.connections.GetConnection(ctx, connectionID)
+	connection, err := d.connections.GetConnection(ctx, tenantID, connectionID)
 	if err != nil {
 		return providers.ActionResult{}, fmt.Errorf("actions.Dispatch: load connection: %w", err)
 	}
 
-	token, err := d.connections.GetDecryptedToken(ctx, connectionID)
+	token, err := d.connections.GetDecryptedToken(ctx, tenantID, connectionID)
 	if err != nil {
 		return providers.ActionResult{}, fmt.Errorf("actions.Dispatch: decrypt token: %w", err)
 	}

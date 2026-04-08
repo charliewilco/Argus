@@ -17,7 +17,7 @@ const FailedJobTypePipelineExecution = "pipeline_execution"
 var ErrExecutionFailed = errors.New("pipeline: execution failed")
 
 type ActionDispatcher interface {
-	Dispatch(ctx context.Context, stepConfig map[string]any, connectionID string, event *envelope.Event) (providers.ActionResult, error)
+	Dispatch(ctx context.Context, stepConfig map[string]any, tenantID, connectionID string, event *envelope.Event) (providers.ActionResult, error)
 }
 
 type DeadLetterQueue interface {
@@ -183,7 +183,7 @@ func (e *Executor) executeStep(ctx context.Context, value Pipeline, step Step, e
 			connectionID = value.ConnectionID
 		}
 
-		actionResult, err := e.dispatcher.Dispatch(ctx, resolvedConfig, connectionID, event)
+		actionResult, err := e.dispatcher.Dispatch(ctx, resolvedConfig, value.TenantID, connectionID, event)
 		if err != nil {
 			stepResult.Status = StepStatusFailed
 			stepResult.Error = err.Error()

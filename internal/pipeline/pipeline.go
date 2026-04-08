@@ -102,6 +102,9 @@ func (s *Step) UnmarshalJSON(data []byte) error {
 			s.Type = StepTypeCondition
 			s.Config = map[string]any{
 				"expression": decoded.Condition,
+				"conditions": map[string]any{
+					decoded.Condition: true,
+				},
 			}
 		}
 	}

@@ -21,12 +21,44 @@ type dispatcherStub struct {
 	lastConfig map[string]any
 }
 
-func (d *dispatcherStub) Dispatch(_ context.Context, stepConfig map[string]any, _ string, _ *envelope.Event) (providers.ActionResult, error) {
+func (d *dispatcherStub) Dispatch(_ context.Context, stepConfig map[string]any, _, _ string, _ *envelope.Event) (providers.ActionResult, error) {
 	d.lastConfig = stepConfig
 	if d.err != nil {
 		return providers.ActionResult{}, d.err
 	}
 	return d.result, nil
+}
+
+func TestExecutorRunsLegacyConditionStep(t *testing.T) {
+	t.Parallel()
+
+	executor, err := pipeline.NewExecutor(&dispatcherStub{}, &dlqStub{}, func() time.Time {
+		return time.Date(2026, 4, 7, 12, 0, 0, 0, time.UTC)
+	})
+	require.NoError(t, err)
+
+	var value pipeline.Pipeline
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"id":"pipe_legacy",
+		"tenant_id":"tenant_1",
+		"steps":[
+			{"id":"step_1","condition":"event.pull_request.merged"}
+		]
+	}`), &value))
+
+	result, err := executor.Execute(context.Background(), value, envelope.Event{
+		ID: "evt_1",
+		Normalized: map[string]any{
+			"pull_request": map[string]any{
+				"merged": true,
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, pipeline.ExecutionStatusSucceeded, result.Status)
+	require.Len(t, result.StepOutcomes, 1)
+	require.Equal(t, pipeline.StepStatusSucceeded, result.StepOutcomes[0].Status)
+	require.Equal(t, true, result.StepOutcomes[0].Output["matched"])
 }
 
 type dlqStub struct {

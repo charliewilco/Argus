@@ -162,6 +162,36 @@ func TestStoreSaveAndGetConnectionAndPipeline(t *testing.T) {
 	require.Len(t, pipelines, 1)
 }
 
+func TestStoreAllowsDuplicateConnectionIDsAcrossTenants(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	sqliteStore := newStore(t)
+
+	require.NoError(t, sqliteStore.SaveConnection(ctx, &connections.Connection{
+		TenantID:     "tenant_1",
+		ConnectionID: "conn_shared",
+		Provider:     "github",
+		Config:       map[string]any{},
+		CreatedAt:    time.Date(2026, 4, 7, 12, 0, 0, 0, time.UTC),
+	}))
+	require.NoError(t, sqliteStore.SaveConnection(ctx, &connections.Connection{
+		TenantID:     "tenant_2",
+		ConnectionID: "conn_shared",
+		Provider:     "github",
+		Config:       map[string]any{},
+		CreatedAt:    time.Date(2026, 4, 7, 12, 1, 0, 0, time.UTC),
+	}))
+
+	tenantOne, err := sqliteStore.GetConnection(ctx, "tenant_1", "conn_shared")
+	require.NoError(t, err)
+	require.Equal(t, "tenant_1", tenantOne.TenantID)
+
+	tenantTwo, err := sqliteStore.GetConnection(ctx, "tenant_2", "conn_shared")
+	require.NoError(t, err)
+	require.Equal(t, "tenant_2", tenantTwo.TenantID)
+}
+
 func TestStoreSaveGetAndDeleteOAuthStateAndSecret(t *testing.T) {
 	t.Parallel()
 
