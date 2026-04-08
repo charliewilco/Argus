@@ -1,4 +1,4 @@
-package github
+package uber
 
 import (
 	"encoding/json"
@@ -11,28 +11,29 @@ import (
 )
 
 const (
-	ProviderID             = "github"
-	AuthorizationURL       = "https://github.com/login/oauth/authorize"
-	TokenURL               = "https://github.com/login/oauth/access_token"
-	ScopeRepo              = "repo"
-	ScopeReadUser          = "read:user"
-	ScopeUserEmail         = "user:email"
-	HeaderEvent            = "X-GitHub-Event"
-	HeaderWebhookSignature = "X-Hub-Signature-256"
+	ProviderID          = "uber"
+	AuthorizationURL    = "https://login.uber.com/oauth/v2/authorize"
+	TokenURL            = "https://login.uber.com/oauth/v2/token"
+	ScopeProfile        = "profile"
+	ScopeRequest        = "request"
+	ScopeRequestReceipt = "request.receipt"
+	ScopeHistory        = "history"
+	HeaderSignature     = "X-Uber-Signature"
 )
 
 var (
 	defaultScopes = []string{
-		ScopeRepo,
-		ScopeReadUser,
-		ScopeUserEmail,
-	}
-	actions = []providerapi.Action{
-		{Key: "create_issue", Label: "Create Issue"},
-		{Key: "create_comment", Label: "Create Comment"},
-		{Key: "create_check_run", Label: "Create Check Run"},
+		ScopeProfile,
+		ScopeRequest,
+		ScopeRequestReceipt,
+		ScopeHistory,
 	}
 )
+
+type webhookPayload struct {
+	EventType string `json:"event_type"`
+	Kind      string `json:"kind"`
+}
 
 type ProviderConfig = providerapi.ProviderConfig
 
@@ -67,7 +68,7 @@ func (p *Provider) Metadata() providerapi.Metadata {
 		AuthorizationURL:  AuthorizationURL,
 		TokenURL:          TokenURL,
 		Scopes:            providerapi.CloneStrings(p.oauthConfig.Scopes),
-		Actions:           providerapi.CloneActions(actions),
+		Actions:           nil,
 		WebhooksSupported: true,
 	}
 }
@@ -79,32 +80,41 @@ func (p *Provider) OAuthConfig() *oauth2.Config {
 }
 
 func (p *Provider) ParseWebhookEvent(headers http.Header, body []byte) (*providerapi.WebhookEvent, error) {
-	if err := providerapi.ValidateHMACSHA256Hex(p.config.WebhookSecret, body, headers.Get(HeaderWebhookSignature), "sha256="); err != nil {
-		return nil, fmt.Errorf("github: validate webhook signature: %w", err)
+	if err := validateSignature(p.config.WebhookSecret, body, headers.Get(HeaderSignature)); err != nil {
+		return nil, fmt.Errorf("uber: validate webhook signature: %w", err)
 	}
 
-	eventType := headers.Get(HeaderEvent)
+	var payload webhookPayload
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, fmt.Errorf("uber: decode webhook payload: %w", err)
+	}
+
+	eventType := payload.EventType
 	if eventType == "" {
-		return nil, fmt.Errorf("github: missing %s header", HeaderEvent)
+		eventType = payload.Kind
+	}
+	if eventType == "" {
+		return nil, fmt.Errorf("uber: missing event type")
 	}
 
-	var payload map[string]any
-	if len(body) > 0 {
-		if err := json.Unmarshal(body, &payload); err != nil {
-			return nil, fmt.Errorf("github: decode webhook payload: %w", err)
-		}
-	}
-
-	triggerKey := ProviderID + "." + eventType
-	if action, ok := payload["action"].(string); ok && action != "" {
-		triggerKey += "." + action
-	}
+	normalized := map[string]any{"type": eventType}
 
 	return &providerapi.WebhookEvent{
-		TriggerKey: triggerKey,
+		TriggerKey: ProviderID + "." + eventType,
 		Raw:        append([]byte(nil), body...),
 		Payload:    payload,
-		Normalized: payload,
+		Normalized: normalized,
 		ReceivedAt: time.Now().UTC(),
 	}, nil
+}
+
+func validateSignature(secret string, body []byte, signature string) error {
+	if signature == "" {
+		return providerapi.ErrMissingWebhookSignature
+	}
+	if err := providerapi.ValidateHMACSHA256Hex(secret, body, signature, "sha256="); err == nil {
+		return nil
+	}
+
+	return providerapi.ValidateHMACSHA256Hex(secret, body, signature, "")
 }

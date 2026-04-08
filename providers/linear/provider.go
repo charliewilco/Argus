@@ -1,4 +1,4 @@
-package github
+package linear
 
 import (
 	"encoding/json"
@@ -11,28 +11,31 @@ import (
 )
 
 const (
-	ProviderID             = "github"
-	AuthorizationURL       = "https://github.com/login/oauth/authorize"
-	TokenURL               = "https://github.com/login/oauth/access_token"
-	ScopeRepo              = "repo"
-	ScopeReadUser          = "read:user"
-	ScopeUserEmail         = "user:email"
-	HeaderEvent            = "X-GitHub-Event"
-	HeaderWebhookSignature = "X-Hub-Signature-256"
+	ProviderID        = "linear"
+	AuthorizationURL  = "https://linear.app/oauth/authorize"
+	TokenURL          = "https://api.linear.app/oauth/token"
+	ScopeRead         = "read"
+	ScopeWrite        = "write"
+	ScopeIssuesCreate = "issues:create"
+	HeaderSignature   = "Linear-Signature"
 )
 
 var (
 	defaultScopes = []string{
-		ScopeRepo,
-		ScopeReadUser,
-		ScopeUserEmail,
+		ScopeRead,
+		ScopeWrite,
+		ScopeIssuesCreate,
 	}
 	actions = []providerapi.Action{
 		{Key: "create_issue", Label: "Create Issue"},
-		{Key: "create_comment", Label: "Create Comment"},
-		{Key: "create_check_run", Label: "Create Check Run"},
+		{Key: "update_issue", Label: "Update Issue"},
+		{Key: "add_comment", Label: "Add Comment"},
 	}
 )
+
+type webhookPayload struct {
+	Type string `json:"type"`
+}
 
 type ProviderConfig = providerapi.ProviderConfig
 
@@ -79,32 +82,25 @@ func (p *Provider) OAuthConfig() *oauth2.Config {
 }
 
 func (p *Provider) ParseWebhookEvent(headers http.Header, body []byte) (*providerapi.WebhookEvent, error) {
-	if err := providerapi.ValidateHMACSHA256Hex(p.config.WebhookSecret, body, headers.Get(HeaderWebhookSignature), "sha256="); err != nil {
-		return nil, fmt.Errorf("github: validate webhook signature: %w", err)
+	if err := providerapi.ValidateHMACSHA256Hex(p.config.WebhookSecret, body, headers.Get(HeaderSignature), ""); err != nil {
+		return nil, fmt.Errorf("linear: validate webhook signature: %w", err)
 	}
 
-	eventType := headers.Get(HeaderEvent)
-	if eventType == "" {
-		return nil, fmt.Errorf("github: missing %s header", HeaderEvent)
+	var payload webhookPayload
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, fmt.Errorf("linear: decode webhook payload: %w", err)
+	}
+	if payload.Type == "" {
+		return nil, fmt.Errorf("linear: missing event type")
 	}
 
-	var payload map[string]any
-	if len(body) > 0 {
-		if err := json.Unmarshal(body, &payload); err != nil {
-			return nil, fmt.Errorf("github: decode webhook payload: %w", err)
-		}
-	}
-
-	triggerKey := ProviderID + "." + eventType
-	if action, ok := payload["action"].(string); ok && action != "" {
-		triggerKey += "." + action
-	}
+	normalized := map[string]any{"type": payload.Type}
 
 	return &providerapi.WebhookEvent{
-		TriggerKey: triggerKey,
+		TriggerKey: ProviderID + "." + payload.Type,
 		Raw:        append([]byte(nil), body...),
 		Payload:    payload,
-		Normalized: payload,
+		Normalized: normalized,
 		ReceivedAt: time.Now().UTC(),
 	}, nil
 }

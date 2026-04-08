@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/charliewilco/argus/providers"
 	"github.com/go-chi/chi/v5"
 )
 
 type RouterOptions struct {
-	BaseURL string
+	BaseURL   string
+	Providers *providers.Registry
 }
 
 func NewRouter(opts RouterOptions) http.Handler {
@@ -39,7 +41,14 @@ func NewRouter(opts RouterOptions) http.Handler {
 		r.Get("/events", notImplemented("list events"))
 		r.Get("/events/{id}/replay", notImplemented("replay event"))
 
-		r.Get("/providers", notImplemented("list providers"))
+		r.Get("/providers", func(w http.ResponseWriter, r *http.Request) {
+			if opts.Providers == nil {
+				writeJSON(w, http.StatusOK, []providers.Metadata{})
+				return
+			}
+
+			writeJSON(w, http.StatusOK, opts.Providers.Metadata())
+		})
 		r.Get("/providers/{name}/schema", notImplemented("provider schema"))
 		r.Get("/providers/{name}/options/{field}", notImplemented("provider options"))
 	})

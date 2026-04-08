@@ -1,4 +1,4 @@
-package github
+package slack
 
 import (
 	"encoding/json"
@@ -11,28 +11,39 @@ import (
 )
 
 const (
-	ProviderID             = "github"
-	AuthorizationURL       = "https://github.com/login/oauth/authorize"
-	TokenURL               = "https://github.com/login/oauth/access_token"
-	ScopeRepo              = "repo"
-	ScopeReadUser          = "read:user"
-	ScopeUserEmail         = "user:email"
-	HeaderEvent            = "X-GitHub-Event"
-	HeaderWebhookSignature = "X-Hub-Signature-256"
+	ProviderID          = "slack"
+	AuthorizationURL    = "https://slack.com/oauth/v2/authorize"
+	TokenURL            = "https://slack.com/api/oauth.v2.access"
+	ScopeChannelsRead   = "channels:read"
+	ScopeChatWrite      = "chat:write"
+	ScopeFilesWrite     = "files:write"
+	ScopeUsersRead      = "users:read"
+	ScopeReactionsWrite = "reactions:write"
+	HeaderSignature     = "X-Slack-Signature"
+	HeaderTimestamp     = "X-Slack-Request-Timestamp"
 )
 
 var (
 	defaultScopes = []string{
-		ScopeRepo,
-		ScopeReadUser,
-		ScopeUserEmail,
+		ScopeChannelsRead,
+		ScopeChatWrite,
+		ScopeFilesWrite,
+		ScopeUsersRead,
+		ScopeReactionsWrite,
 	}
 	actions = []providerapi.Action{
-		{Key: "create_issue", Label: "Create Issue"},
-		{Key: "create_comment", Label: "Create Comment"},
-		{Key: "create_check_run", Label: "Create Check Run"},
+		{Key: "post_message", Label: "Post Message"},
+		{Key: "upload_file", Label: "Upload File"},
+		{Key: "add_reaction", Label: "Add Reaction"},
 	}
 )
+
+type webhookPayload struct {
+	Type  string `json:"type"`
+	Event struct {
+		Type string `json:"type"`
+	} `json:"event"`
+}
 
 type ProviderConfig = providerapi.ProviderConfig
 
@@ -79,32 +90,31 @@ func (p *Provider) OAuthConfig() *oauth2.Config {
 }
 
 func (p *Provider) ParseWebhookEvent(headers http.Header, body []byte) (*providerapi.WebhookEvent, error) {
-	if err := providerapi.ValidateHMACSHA256Hex(p.config.WebhookSecret, body, headers.Get(HeaderWebhookSignature), "sha256="); err != nil {
-		return nil, fmt.Errorf("github: validate webhook signature: %w", err)
+	signedPayload := []byte("v0:" + headers.Get(HeaderTimestamp) + ":" + string(body))
+	if err := providerapi.ValidateHMACSHA256Hex(p.config.WebhookSecret, signedPayload, headers.Get(HeaderSignature), "v0="); err != nil {
+		return nil, fmt.Errorf("slack: validate webhook signature: %w", err)
 	}
 
-	eventType := headers.Get(HeaderEvent)
+	var payload webhookPayload
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, fmt.Errorf("slack: decode webhook payload: %w", err)
+	}
+
+	eventType := payload.Event.Type
 	if eventType == "" {
-		return nil, fmt.Errorf("github: missing %s header", HeaderEvent)
+		eventType = payload.Type
+	}
+	if eventType == "" {
+		return nil, fmt.Errorf("slack: missing event type")
 	}
 
-	var payload map[string]any
-	if len(body) > 0 {
-		if err := json.Unmarshal(body, &payload); err != nil {
-			return nil, fmt.Errorf("github: decode webhook payload: %w", err)
-		}
-	}
-
-	triggerKey := ProviderID + "." + eventType
-	if action, ok := payload["action"].(string); ok && action != "" {
-		triggerKey += "." + action
-	}
+	normalized := map[string]any{"type": eventType}
 
 	return &providerapi.WebhookEvent{
-		TriggerKey: triggerKey,
+		TriggerKey: ProviderID + "." + eventType,
 		Raw:        append([]byte(nil), body...),
 		Payload:    payload,
-		Normalized: payload,
+		Normalized: normalized,
 		ReceivedAt: time.Now().UTC(),
 	}, nil
 }
