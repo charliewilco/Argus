@@ -167,6 +167,32 @@ func TestGetTokenRefreshesNearExpiry(t *testing.T) {
 	require.NotContains(t, string(secret.Ciphertext), "refreshed-access-token")
 }
 
+func TestGetTokenReturnsErrorWhenRefreshNeedsConfig(t *testing.T) {
+	t.Parallel()
+
+	manager, store := newManager(t)
+	ctx := context.Background()
+
+	expiringToken := &oauth2.Token{
+		AccessToken:  "old-access-token",
+		RefreshToken: "refresh-token",
+		TokenType:    "Bearer",
+		Expiry:       time.Now().UTC().Add(2 * time.Minute),
+	}
+	require.NoError(t, store.SaveConnection(ctx, &connections.Connection{
+		TenantID:     "tenant_1",
+		ConnectionID: "conn_1",
+		Provider:     "github",
+		Config:       map[string]any{},
+		CreatedAt:    time.Now().UTC(),
+	}))
+	require.NoError(t, manager.SaveToken(ctx, "tenant_1", "conn_1", expiringToken))
+
+	token, err := manager.GetToken(ctx, "tenant_1", "conn_1", nil)
+	require.Nil(t, token)
+	require.EqualError(t, err, "oauth.GetToken: config is required to refresh token")
+}
+
 func newManager(t *testing.T) (*oauth.Manager, *sqlitestore.Store) {
 	t.Helper()
 

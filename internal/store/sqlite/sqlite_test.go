@@ -162,6 +162,68 @@ func TestStoreSaveAndGetConnectionAndPipeline(t *testing.T) {
 	require.Len(t, pipelines, 1)
 }
 
+func TestStoreSavePipelineDefaultsNewPipelinesToEnabled(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	sqliteStore := newStore(t)
+
+	value := &pipeline.Pipeline{
+		ID:           "pipe_default_enabled",
+		TenantID:     "tenant_1",
+		Name:         "Default enabled",
+		ConnectionID: "conn_1",
+		Trigger: pipeline.Trigger{
+			Key: "github.push",
+		},
+	}
+
+	require.NoError(t, sqliteStore.SavePipeline(ctx, value))
+	require.True(t, value.Enabled)
+
+	got, err := sqliteStore.GetPipeline(ctx, value.ID)
+	require.NoError(t, err)
+	require.True(t, got.Enabled)
+}
+
+func TestStoreSavePipelinePreservesDisabledWhenUpdateOmitsEnabled(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	sqliteStore := newStore(t)
+
+	value := &pipeline.Pipeline{
+		ID:           "pipe_preserve_disabled",
+		TenantID:     "tenant_1",
+		Name:         "Initially enabled",
+		ConnectionID: "conn_1",
+		Trigger: pipeline.Trigger{
+			Key: "github.push",
+		},
+	}
+	require.NoError(t, sqliteStore.SavePipeline(ctx, value))
+
+	value.SetEnabled(false)
+	require.NoError(t, sqliteStore.SavePipeline(ctx, value))
+
+	update := &pipeline.Pipeline{
+		ID:           value.ID,
+		TenantID:     value.TenantID,
+		Name:         "Updated name",
+		ConnectionID: value.ConnectionID,
+		Trigger: pipeline.Trigger{
+			Key: value.Trigger.Key,
+		},
+	}
+	require.NoError(t, sqliteStore.SavePipeline(ctx, update))
+	require.False(t, update.Enabled)
+
+	got, err := sqliteStore.GetPipeline(ctx, value.ID)
+	require.NoError(t, err)
+	require.False(t, got.Enabled)
+	require.Equal(t, "Updated name", got.Name)
+}
+
 func TestStoreAllowsDuplicateConnectionIDsAcrossTenants(t *testing.T) {
 	t.Parallel()
 
