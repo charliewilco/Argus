@@ -30,14 +30,15 @@ The repository is being rebuilt in the following order:
 14. `cmd/argus-cli`
 15. Additional providers
 
-The repository currently has steps 1 through 5 in place, plus minimal scaffolding for `cmd/argus`, `cmd/argus-cli`, and `internal/api`.
+The repository currently has steps 1 through 14 in place, with constructor-wired `cmd/argus` and `cmd/argus-cli` entrypoints plus `internal/api`.
 
 Implemented foundation:
 - `internal/queue` with an in-memory queue
 - `internal/oauth` with PKCE auth state, encrypted token persistence, and token refresh support
 - `internal/store/sqlite` with embedded SQL migrations
-- `internal/api` with spec-shaped placeholder routes
-- `cmd/argus` and `cmd/argus-cli` entrypoints that compile and run
+- `internal/api` with spec-shaped routes backed by constructor-injected services
+- `cmd/argus` server wiring for config, store, providers, OAuth, router, and HTTP lifecycle
+- `cmd/argus-cli` command wiring with a health command against `/healthz`
 
 ## Storage Model
 
