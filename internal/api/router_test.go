@@ -82,8 +82,8 @@ type connectionServiceStub struct {
 	listProviderID     string
 	deleteTenantID     string
 	deleteConnectionID string
-	connections []connections.Connection
-	deletedIDs  []string
+	connections        []connections.Connection
+	deletedIDs         []string
 }
 
 func (s *connectionServiceStub) ListConnections(_ context.Context, tenantID, providerID string) ([]connections.Connection, error) {
@@ -139,7 +139,9 @@ func (dlqStub) Replay(context.Context, string) error { return nil }
 
 type noOpMatcherStub struct{}
 
-func (noOpMatcherStub) Match(context.Context, envelope.Event) ([]pipeline.Pipeline, error) { return nil, nil }
+func (noOpMatcherStub) Match(context.Context, envelope.Event) ([]pipeline.Pipeline, error) {
+	return nil, nil
+}
 
 func TestWebhookSkipsPipelinesBoundToOtherConnections(t *testing.T) {
 	t.Parallel()
@@ -210,11 +212,11 @@ func TestListConnectionsIsTenantScoped(t *testing.T) {
 			provider: providerStub{},
 		},
 		Connections: connectionService,
-		Pipelines: pipelineStoreStub{},
-		Events:    &eventStoreStub{},
-		Matcher:   noOpMatcherStub{},
-		Queue:     &queueRecorder{},
-		DLQ:       dlqStub{},
+		Pipelines:   pipelineStoreStub{},
+		Events:      &eventStoreStub{},
+		Matcher:     noOpMatcherStub{},
+		Queue:       &queueRecorder{},
+		DLQ:         dlqStub{},
 	})
 	require.NoError(t, err)
 
