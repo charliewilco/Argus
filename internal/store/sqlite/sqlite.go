@@ -410,6 +410,15 @@ func (s *Store) DeleteOAuthState(ctx context.Context, key string) error {
 }
 
 func (s *Store) SavePipeline(ctx context.Context, value *pipeline.Pipeline) error {
+	if value == nil {
+		return errors.New("sqlite.SavePipeline: pipeline is required")
+	}
+
+	enabled, err := s.pipelineEnabledForSave(ctx, value)
+	if err != nil {
+		return err
+	}
+
 	stepsJSON, err := marshalJSON(value.Steps)
 	if err != nil {
 		return fmt.Errorf("sqlite.SavePipeline: marshal steps: %w", err)
@@ -435,13 +444,46 @@ func (s *Store) SavePipeline(ctx context.Context, value *pipeline.Pipeline) erro
 		value.TriggerKey,
 		value.ConnectionID,
 		stepsJSON,
-		value.Enabled,
+		enabled,
 	)
 	if err != nil {
 		return fmt.Errorf("sqlite.SavePipeline: %w", err)
 	}
 
 	return nil
+}
+
+func (s *Store) pipelineEnabledForSave(ctx context.Context, value *pipeline.Pipeline) (bool, error) {
+	if value.Enabled {
+		return true, nil
+	}
+	if value.HasExplicitEnabled() {
+		return false, nil
+	}
+	if value.ID == "" {
+		return true, nil
+	}
+
+	row := s.db.QueryRowContext(
+		ctx,
+		`
+		SELECT enabled
+		FROM pipelines
+		WHERE id = ?
+		`,
+		value.ID,
+	)
+
+	var existing bool
+	if err := row.Scan(&existing); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return true, nil
+		}
+
+		return false, fmt.Errorf("sqlite.SavePipeline: load existing pipeline: %w", err)
+	}
+
+	return existing, nil
 }
 
 func (s *Store) GetPipeline(ctx context.Context, id string) (*pipeline.Pipeline, error) {

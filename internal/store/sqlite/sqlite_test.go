@@ -156,6 +156,91 @@ func TestStoreSaveAndGetConnectionAndPipeline(t *testing.T) {
 	require.Len(t, pipelines, 1)
 }
 
+func TestStoreSavePipelineDefaultsNewPipelinesToEnabled(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	sqliteStore := newStore(t)
+
+	value := &pipeline.Pipeline{
+		ID:           "pipe_default_enabled",
+		TenantID:     "tenant_1",
+		Name:         "Default enabled pipeline",
+		TriggerKey:   "github.issue.created",
+		ConnectionID: "conn_1",
+		Steps: []pipeline.Step{
+			{
+				ID:        "step_1",
+				Action:    "condition.evaluate",
+				Condition: `event.action == "opened"`,
+			},
+		},
+	}
+
+	require.NoError(t, sqliteStore.SavePipeline(ctx, value))
+
+	got, err := sqliteStore.GetPipeline(ctx, value.ID)
+	require.NoError(t, err)
+	require.True(t, got.Enabled)
+	require.Equal(t, value.Steps[0].Condition, got.Steps[0].Condition)
+}
+
+func TestStoreSavePipelineAllowsDisablingExistingPipeline(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	sqliteStore := newStore(t)
+
+	value := &pipeline.Pipeline{
+		ID:           "pipe_can_disable",
+		TenantID:     "tenant_1",
+		Name:         "Pipeline that can be disabled",
+		TriggerKey:   "github.issue.created",
+		ConnectionID: "conn_1",
+		Enabled:      true,
+	}
+
+	require.NoError(t, sqliteStore.SavePipeline(ctx, value))
+
+	value.SetEnabled(false)
+	require.NoError(t, sqliteStore.SavePipeline(ctx, value))
+
+	got, err := sqliteStore.GetPipeline(ctx, value.ID)
+	require.NoError(t, err)
+	require.False(t, got.Enabled)
+}
+
+func TestStoreSavePipelinePreservesEnabledWhenUpdateOmitsIt(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	sqliteStore := newStore(t)
+
+	created := &pipeline.Pipeline{
+		ID:           "pipe_preserve_enabled",
+		TenantID:     "tenant_1",
+		Name:         "Original name",
+		TriggerKey:   "github.issue.created",
+		ConnectionID: "conn_1",
+		Enabled:      true,
+	}
+	require.NoError(t, sqliteStore.SavePipeline(ctx, created))
+
+	updated := &pipeline.Pipeline{
+		ID:           created.ID,
+		TenantID:     created.TenantID,
+		Name:         "Updated name",
+		TriggerKey:   created.TriggerKey,
+		ConnectionID: created.ConnectionID,
+	}
+	require.NoError(t, sqliteStore.SavePipeline(ctx, updated))
+
+	got, err := sqliteStore.GetPipeline(ctx, created.ID)
+	require.NoError(t, err)
+	require.True(t, got.Enabled)
+	require.Equal(t, "Updated name", got.Name)
+}
+
 func TestStoreSaveGetAndDeleteOAuthStateAndSecret(t *testing.T) {
 	t.Parallel()
 
