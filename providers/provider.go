@@ -3,15 +3,54 @@ package providers
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
-	"slices"
+	"strings"
+	"time"
 
 	"github.com/charliewilco/argus/internal/envelope"
 	"golang.org/x/oauth2"
 )
 
-var ErrProviderNotFound = errors.New("providers: provider not found")
+var (
+	ErrProviderNotFound          = errors.New("providers: provider not found")
+	ErrWebhooksNotSupported      = errors.New("providers: webhooks not supported")
+	ErrInvalidWebhookSignature   = errors.New("providers: invalid webhook signature")
+	ErrMissingWebhookSignature   = errors.New("providers: missing webhook signature")
+	ErrWebhookSecretRequired     = errors.New("providers: webhook secret is required")
+	ErrUnsupportedProviderAction = errors.New("providers: unsupported action")
+)
+
+type ProviderConfig struct {
+	BaseURL       string
+	RedirectURL   string
+	ClientID      string
+	ClientSecret  string
+	WebhookSecret string
+	Scopes        []string
+}
+
+type Action struct {
+	Key   string `json:"key"`
+	Label string `json:"label"`
+}
+
+type Metadata struct {
+	ID                string   `json:"id"`
+	AuthorizationURL  string   `json:"authorizationURL"`
+	TokenURL          string   `json:"tokenURL"`
+	Scopes            []string `json:"scopes"`
+	Actions           []Action `json:"actions"`
+	WebhooksSupported bool     `json:"webhooksSupported"`
+}
+
+type WebhookEvent struct {
+	ID         string         `json:"id,omitempty"`
+	TriggerKey string         `json:"triggerKey"`
+	Raw        []byte         `json:"-"`
+	Payload    any            `json:"payload,omitempty"`
+	Normalized map[string]any `json:"normalized,omitempty"`
+	ReceivedAt time.Time      `json:"receivedAt"`
+}
 
 type ActionRequest struct {
 	Action       string
@@ -29,67 +68,47 @@ type ActionResult struct {
 
 type Provider interface {
 	ID() string
-	OAuthConfig() oauth2.Config
-	ParseWebhookEvent(r *http.Request) (envelope.Event, error)
+	Metadata() Metadata
+	OAuthConfig() *oauth2.Config
+	ParseWebhookEvent(headers http.Header, body []byte) (*WebhookEvent, error)
 	ExecuteAction(ctx context.Context, token *oauth2.Token, request ActionRequest) (ActionResult, error)
 }
 
-type Registry struct {
-	providers map[string]Provider
+func EffectiveScopes(config ProviderConfig, defaults []string) []string {
+	if len(config.Scopes) > 0 {
+		return CloneStrings(config.Scopes)
+	}
+
+	return CloneStrings(defaults)
 }
 
-func NewRegistry(values ...Provider) (*Registry, error) {
-	registry := &Registry{
-		providers: make(map[string]Provider, len(values)),
+func RedirectURL(config ProviderConfig, providerID string) string {
+	if config.RedirectURL != "" {
+		return config.RedirectURL
+	}
+	if config.BaseURL == "" {
+		return ""
 	}
 
-	for _, value := range values {
-		if value == nil {
-			return nil, fmt.Errorf("providers.NewRegistry: provider is required")
-		}
-
-		id := value.ID()
-		if id == "" {
-			return nil, fmt.Errorf("providers.NewRegistry: provider ID is required")
-		}
-		if _, ok := registry.providers[id]; ok {
-			return nil, fmt.Errorf("providers.NewRegistry: duplicate provider %q", id)
-		}
-
-		registry.providers[id] = value
-	}
-
-	return registry, nil
+	return strings.TrimRight(config.BaseURL, "/") + "/oauth/" + providerID + "/callback"
 }
 
-func (r *Registry) Get(id string) (Provider, error) {
-	if r == nil {
-		return nil, fmt.Errorf("providers.Get: registry is required")
-	}
-
-	provider, ok := r.providers[id]
-	if !ok {
-		return nil, fmt.Errorf("providers.Get: provider %q: %w", id, ErrProviderNotFound)
-	}
-
-	return provider, nil
-}
-
-func (r *Registry) List() []Provider {
-	if r == nil {
+func CloneStrings(values []string) []string {
+	if len(values) == 0 {
 		return nil
 	}
 
-	keys := make([]string, 0, len(r.providers))
-	for key := range r.providers {
-		keys = append(keys, key)
-	}
-	slices.Sort(keys)
+	cloned := make([]string, len(values))
+	copy(cloned, values)
+	return cloned
+}
 
-	providers := make([]Provider, 0, len(keys))
-	for _, key := range keys {
-		providers = append(providers, r.providers[key])
+func CloneActions(values []Action) []Action {
+	if len(values) == 0 {
+		return nil
 	}
 
-	return providers
+	cloned := make([]Action, len(values))
+	copy(cloned, values)
+	return cloned
 }

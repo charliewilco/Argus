@@ -1,4 +1,4 @@
-package github_test
+package facebook_test
 
 import (
 	"net/http"
@@ -7,27 +7,26 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/charliewilco/argus/providers"
-	githubprovider "github.com/charliewilco/argus/providers/github"
+	facebookprovider "github.com/charliewilco/argus/providers/facebook"
 )
 
 func TestProviderID(t *testing.T) {
 	t.Parallel()
 
-	provider := githubprovider.New(githubprovider.ProviderConfig{})
-	require.Equal(t, "github", provider.ID())
+	provider := facebookprovider.New(facebookprovider.ProviderConfig{})
+	require.Equal(t, "facebook", provider.ID())
 }
 
 func TestParseWebhookEventRejectsInvalidSignature(t *testing.T) {
 	t.Parallel()
 
-	provider := githubprovider.New(githubprovider.ProviderConfig{
+	provider := facebookprovider.New(facebookprovider.ProviderConfig{
 		WebhookSecret: "secret",
 	})
 
 	headers := http.Header{}
 	headers.Set("X-Hub-Signature-256", "sha256=bad")
-	headers.Set("X-GitHub-Event", "issues")
 
-	_, err := provider.ParseWebhookEvent(headers, []byte(`{"action":"opened"}`))
+	_, err := provider.ParseWebhookEvent(headers, []byte(`{"entry":[{"changes":[{"field":"feed"}]}]}`))
 	require.ErrorIs(t, err, providers.ErrInvalidWebhookSignature)
 }
