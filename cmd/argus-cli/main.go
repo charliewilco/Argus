@@ -2,13 +2,20 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/charliewilco/argus/internal/app"
 )
+
+const defaultServerURL = "http://localhost:8080"
 
 func main() {
 	if err := newRootCommand().ExecuteContext(context.Background()); err != nil {
@@ -23,9 +30,26 @@ func newRootCommand() *cobra.Command {
 		Short: "Argus CLI",
 	}
 
+	root.AddCommand(newHealthCommand())
 	root.AddCommand(newConnectionsCommand())
 
 	return root
+}
+
+func newHealthCommand() *cobra.Command {
+	var serverURL string
+
+	cmd := &cobra.Command{
+		Use:   "health",
+		Short: "Check Argus server health",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runHealth(cmd.OutOrStdout(), http.DefaultClient, serverURL)
+		},
+	}
+
+	cmd.Flags().StringVar(&serverURL, "server", defaultServerURL, "Argus server base URL")
+
+	return cmd
 }
 
 func newConnectionsCommand() *cobra.Command {
@@ -57,4 +81,34 @@ func newConnectionsCommand() *cobra.Command {
 	cmd.Flags().StringVar(&providerID, "provider", "", "Filter by provider ID")
 
 	return cmd
+}
+
+func runHealth(out io.Writer, client *http.Client, serverURL string) error {
+	if out == nil {
+		out = io.Discard
+	}
+	if client == nil {
+		client = &http.Client{Timeout: 5 * time.Second}
+	}
+
+	target := strings.TrimRight(serverURL, "/") + "/healthz"
+	resp, err := client.Get(target)
+	if err != nil {
+		return fmt.Errorf("check health %q: %w", target, err)
+	}
+	defer resp.Body.Close()
+
+	var payload map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return fmt.Errorf("decode health response: %w", err)
+	}
+	payload["http_status"] = resp.StatusCode
+
+	body, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal health response: %w", err)
+	}
+
+	_, err = fmt.Fprintf(out, "%s\n", body)
+	return err
 }
