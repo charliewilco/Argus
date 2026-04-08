@@ -129,7 +129,7 @@ func (s *Service) GetDecryptedToken(ctx context.Context, tenantID, id string) (*
 	}
 
 	cfg := provider.OAuthConfig()
-	token, err := s.oauth.GetToken(ctx, connection.TenantID, connection.ConnectionID, &cfg)
+	token, err := s.oauth.GetToken(ctx, connection.TenantID, connection.ConnectionID, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("connections.GetDecryptedToken: %w", err)
 	}

@@ -11,7 +11,6 @@ import (
 
 	"github.com/charliewilco/argus/internal/actions"
 	"github.com/charliewilco/argus/internal/connections"
-	"github.com/charliewilco/argus/internal/envelope"
 	"github.com/charliewilco/argus/internal/oauth"
 	"github.com/charliewilco/argus/providers"
 )
@@ -33,10 +32,12 @@ type providerStub struct{}
 
 func (providerStub) ID() string { return "github" }
 
-func (providerStub) OAuthConfig() oauth.Config { return oauth.Config{} }
+func (providerStub) Metadata() providers.Metadata { return providers.Metadata{ID: "github"} }
 
-func (providerStub) ParseWebhookEvent(_ *http.Request) (envelope.Event, error) {
-	return envelope.Event{}, errors.New("not implemented")
+func (providerStub) OAuthConfig() *oauth.Config { return &oauth.Config{} }
+
+func (providerStub) ParseWebhookEvent(_ http.Header, _ []byte) (*providers.WebhookEvent, error) {
+	return nil, errors.New("not implemented")
 }
 
 func (providerStub) ExecuteAction(_ context.Context, _ *oauth.Token, _ providers.ActionRequest) (providers.ActionResult, error) {

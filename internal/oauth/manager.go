@@ -233,8 +233,11 @@ func (m *Manager) GetToken(ctx context.Context, tenantID, connectionID string, c
 		return nil, fmt.Errorf("oauth.GetToken: unmarshal token: %w", err)
 	}
 
-	if !m.shouldRefresh(&token) || cfg == nil {
+	if !m.shouldRefresh(&token) {
 		return &token, nil
+	}
+	if cfg == nil {
+		return nil, errors.New("oauth.GetToken: config is required to refresh token")
 	}
 
 	expiredToken := token
