@@ -31,8 +31,8 @@ type providerRegistry interface {
 }
 
 type connectionService interface {
-	ListConnections(ctx context.Context, providerID string) ([]connections.Connection, error)
-	DeleteConnection(ctx context.Context, id string) error
+	ListConnections(ctx context.Context, tenantID, providerID string) ([]connections.Connection, error)
+	DeleteConnection(ctx context.Context, tenantID, id string) error
 }
 
 type pipelineStore interface {
@@ -114,6 +114,7 @@ func NewRouter(opts RouterOptions) (http.Handler, error) {
 	r.Get("/healthz", h.healthz)
 	r.Post("/oauth/{provider}/authorize", h.authorize)
 	r.Get("/oauth/{provider}/callback", h.callback)
+	r.Post("/webhooks/{provider}/{connectionID}", h.webhook)
 	r.Post("/webhooks/{provider}", h.webhook)
 	r.Get("/connections", h.listConnections)
 	r.Delete("/connections/{id}", h.deleteConnection)
@@ -221,6 +222,7 @@ func (h *router) webhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	event.TenantID = h.tenantID
+	event.ConnectionID = chi.URLParam(r, "connectionID")
 	event.Provider = providerID
 	event.ReceivedAt = h.now().UTC()
 	if event.ID == "" {
@@ -269,7 +271,7 @@ func (h *router) webhook(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *router) listConnections(w http.ResponseWriter, r *http.Request) {
-	values, err := h.connections.ListConnections(r.Context(), r.URL.Query().Get("provider"))
+	values, err := h.connections.ListConnections(r.Context(), h.tenantID, r.URL.Query().Get("provider"))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -279,7 +281,7 @@ func (h *router) listConnections(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *router) deleteConnection(w http.ResponseWriter, r *http.Request) {
-	if err := h.connections.DeleteConnection(r.Context(), chi.URLParam(r, "id")); err != nil {
+	if err := h.connections.DeleteConnection(r.Context(), h.tenantID, chi.URLParam(r, "id")); err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, store.ErrNotFound) {
 			status = http.StatusNotFound

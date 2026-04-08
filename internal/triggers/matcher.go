@@ -53,7 +53,7 @@ func (m *TriggerMatcher) Match(ctx context.Context, event envelope.Event) ([]pip
 		if item.TenantID != "" && event.TenantID != "" && item.TenantID != event.TenantID {
 			continue
 		}
-		if item.ConnectionID != "" && event.ConnectionID != "" && item.ConnectionID != event.ConnectionID {
+		if item.ConnectionID != "" && item.ConnectionID != event.ConnectionID {
 			continue
 		}
 		if item.Trigger.Key != "" && item.Trigger.Key != event.TriggerKey {

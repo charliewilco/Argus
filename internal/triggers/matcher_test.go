@@ -87,3 +87,30 @@ func TestTriggerMatcherMatchesAndRejectsByConditions(t *testing.T) {
 	require.Len(t, matched, 1)
 	require.Equal(t, "pipe_match", matched[0].ID)
 }
+
+func TestTriggerMatcherRejectsConnectionBoundPipelineWithoutEventConnection(t *testing.T) {
+	t.Parallel()
+
+	matcher, err := triggers.NewTriggerMatcher(&triggerStore{
+		pipelines: []*pipeline.Pipeline{
+			{
+				ID:           "pipe_bound",
+				TenantID:     "tenant_1",
+				ConnectionID: "conn_1",
+				Enabled:      true,
+				Trigger: pipeline.Trigger{
+					Key: "github.pull_request",
+				},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	matched, err := matcher.Match(context.Background(), envelope.Event{
+		ID:         "evt_1",
+		TenantID:   "tenant_1",
+		TriggerKey: "github.pull_request",
+	})
+	require.NoError(t, err)
+	require.Empty(t, matched)
+}
