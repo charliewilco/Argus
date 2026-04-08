@@ -123,22 +123,27 @@ func TestStoreSaveAndGetConnectionAndPipeline(t *testing.T) {
 	require.Nil(t, gotConnection.Token)
 
 	value := &pipeline.Pipeline{
-		ID:           "pipe_1",
-		TenantID:     "tenant_1",
-		Name:         "New issue to Slack",
-		TriggerKey:   "github.issue.created",
+		ID:       "pipe_1",
+		TenantID: "tenant_1",
+		Name:     "New issue to Slack",
+		Trigger: pipeline.Trigger{
+			Key: "github.issues",
+			Conditions: map[string]any{
+				"event.action": "opened",
+			},
+		},
 		ConnectionID: "conn_1",
 		Enabled:      true,
 		Steps: []pipeline.Step{
 			{
-				ID:         "step_1",
-				Name:       "Notify Slack",
-				Action:     "slack.send_message",
-				Connection: "conn_slack",
-				Input: map[string]any{
-					"text": "{{event.normalized.title}}",
+				ID:   "step_1",
+				Name: "Notify Slack",
+				Type: pipeline.StepTypeAction,
+				Config: map[string]any{
+					"action":        "slack.send_message",
+					"connection_id": "conn_slack",
+					"text":          "{{event.title}}",
 				},
-				OnError: pipeline.ErrorBehaviorRetry,
 			},
 		},
 	}
@@ -149,11 +154,42 @@ func TestStoreSaveAndGetConnectionAndPipeline(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, value.Name, gotPipeline.Name)
 	require.Len(t, gotPipeline.Steps, 1)
-	require.Equal(t, value.Steps[0].Action, gotPipeline.Steps[0].Action)
+	require.Equal(t, value.Steps[0].Config["action"], gotPipeline.Steps[0].Config["action"])
+	require.Equal(t, value.Trigger.Key, gotPipeline.Trigger.Key)
 
 	pipelines, err := sqliteStore.ListPipelines(ctx, "tenant_1")
 	require.NoError(t, err)
 	require.Len(t, pipelines, 1)
+}
+
+func TestStoreAllowsDuplicateConnectionIDsAcrossTenants(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	sqliteStore := newStore(t)
+
+	require.NoError(t, sqliteStore.SaveConnection(ctx, &connections.Connection{
+		TenantID:     "tenant_1",
+		ConnectionID: "conn_shared",
+		Provider:     "github",
+		Config:       map[string]any{},
+		CreatedAt:    time.Date(2026, 4, 7, 12, 0, 0, 0, time.UTC),
+	}))
+	require.NoError(t, sqliteStore.SaveConnection(ctx, &connections.Connection{
+		TenantID:     "tenant_2",
+		ConnectionID: "conn_shared",
+		Provider:     "github",
+		Config:       map[string]any{},
+		CreatedAt:    time.Date(2026, 4, 7, 12, 1, 0, 0, time.UTC),
+	}))
+
+	tenantOne, err := sqliteStore.GetConnection(ctx, "tenant_1", "conn_shared")
+	require.NoError(t, err)
+	require.Equal(t, "tenant_1", tenantOne.TenantID)
+
+	tenantTwo, err := sqliteStore.GetConnection(ctx, "tenant_2", "conn_shared")
+	require.NoError(t, err)
+	require.Equal(t, "tenant_2", tenantTwo.TenantID)
 }
 
 func TestStoreSaveGetAndDeleteOAuthStateAndSecret(t *testing.T) {

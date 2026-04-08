@@ -20,6 +20,14 @@ type Config struct {
 	Port        int
 	RedisURL    string
 	SecretKey   string
+	TenantID    string
+	GitHub      GitHubConfig
+}
+
+type GitHubConfig struct {
+	ClientID      string
+	ClientSecret  string
+	WebhookSecret string
 }
 
 func Load() (Config, error) {
@@ -40,6 +48,12 @@ func Load() (Config, error) {
 		Port:        port,
 		RedisURL:    os.Getenv("ARGUS_REDIS_URL"),
 		SecretKey:   os.Getenv("ARGUS_SECRET_KEY"),
+		TenantID:    valueOrDefault(os.Getenv("ARGUS_TENANT_ID"), "default"),
+		GitHub: GitHubConfig{
+			ClientID:      os.Getenv("GITHUB_CLIENT_ID"),
+			ClientSecret:  os.Getenv("GITHUB_CLIENT_SECRET"),
+			WebhookSecret: os.Getenv("GITHUB_WEBHOOK_SECRET"),
+		},
 	}
 
 	if cfg.SecretKey == "" {
