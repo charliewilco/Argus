@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/charliewilco/argus/internal/connections"
-	"github.com/charliewilco/argus/internal/envelope"
 	"github.com/charliewilco/argus/internal/oauth"
 	"github.com/charliewilco/argus/providers"
 	"golang.org/x/oauth2"
@@ -77,15 +76,17 @@ func (s *providerRegistryStub) Get(_ string) (providers.Provider, error) {
 }
 
 type providerStub struct {
-	config oauth.Config
+	config *oauth.Config
 }
 
 func (s providerStub) ID() string { return "github" }
 
-func (s providerStub) OAuthConfig() oauth.Config { return s.config }
+func (s providerStub) Metadata() providers.Metadata { return providers.Metadata{ID: "github"} }
 
-func (s providerStub) ParseWebhookEvent(_ *http.Request) (envelope.Event, error) {
-	return envelope.Event{}, errors.New("unexpected call")
+func (s providerStub) OAuthConfig() *oauth.Config { return s.config }
+
+func (s providerStub) ParseWebhookEvent(_ http.Header, _ []byte) (*providers.WebhookEvent, error) {
+	return nil, errors.New("unexpected call")
 }
 
 func (s providerStub) ExecuteAction(_ context.Context, _ *oauth2.Token, _ providers.ActionRequest) (providers.ActionResult, error) {
@@ -141,7 +142,7 @@ func TestServiceGetDecryptedTokenUsesProviderOAuthConfig(t *testing.T) {
 	tokenReader := &tokenReaderStub{}
 	service, err := connections.NewService(store, tokenReader, &providerRegistryStub{
 		provider: providerStub{
-			config: oauth.Config{
+			config: &oauth.Config{
 				ClientID:    "client-id",
 				RedirectURL: "http://localhost/oauth/github/callback",
 			},

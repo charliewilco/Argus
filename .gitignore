@@ -11,3 +11,6 @@ argus-cli
 *.db-wal
 
 coverage.out
+
+!cmd/argus-cli/
+!cmd/argus-cli/**

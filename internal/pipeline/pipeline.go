@@ -103,7 +103,6 @@ func (p *Pipeline) UnmarshalJSON(data []byte) error {
 }
 
 func (s *Step) UnmarshalJSON(data []byte) error {
-	type stepAlias Step
 	type legacyStep struct {
 		ID         string         `json:"id"`
 		Name       string         `json:"name"`

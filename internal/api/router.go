@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -28,6 +29,7 @@ type oauthManager interface {
 
 type providerRegistry interface {
 	Get(id string) (providers.Provider, error)
+	Metadata() []providers.Metadata
 }
 
 type connectionService interface {
@@ -66,7 +68,6 @@ type RouterOptions struct {
 	Queue       queue.Queue
 	DLQ         dlqStore
 }
-
 type router struct {
 	baseURL     string
 	tenantID    string
@@ -118,6 +119,7 @@ func NewRouter(opts RouterOptions) (http.Handler, error) {
 	r.Post("/webhooks/{provider}", h.webhook)
 	r.Get("/connections", h.listConnections)
 	r.Delete("/connections/{id}", h.deleteConnection)
+	r.Get("/providers", h.listProviders)
 	r.Get("/pipelines", h.listPipelines)
 	r.Post("/pipelines", h.createPipeline)
 	r.Get("/dlq", h.listDLQ)
@@ -152,7 +154,7 @@ func (h *router) authorize(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cfg := provider.OAuthConfig()
-	session, err := h.oauth.BeginAuth(r.Context(), &cfg, oauth.AuthorizationRequest{
+	session, err := h.oauth.BeginAuth(r.Context(), cfg, oauth.AuthorizationRequest{
 		TenantID:     h.tenantID,
 		ConnectionID: request.ConnectionID,
 		Provider:     providerID,
@@ -186,7 +188,7 @@ func (h *router) callback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cfg := provider.OAuthConfig()
-	result, err := h.oauth.Exchange(r.Context(), &cfg, code, stateID)
+	result, err := h.oauth.Exchange(r.Context(), cfg, code, stateID)
 	if err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, oauth.ErrExpiredState) {
@@ -215,16 +217,28 @@ func (h *router) webhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	event, err := provider.ParseWebhookEvent(r)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("api.webhook: read request body: %w", err))
+		return
+	}
+
+	webhookEvent, err := provider.ParseWebhookEvent(r.Header, body)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, err)
 		return
 	}
 
-	event.TenantID = h.tenantID
-	event.ConnectionID = chi.URLParam(r, "connectionID")
-	event.Provider = providerID
-	event.ReceivedAt = h.now().UTC()
+	event := envelope.Event{
+		ID:           webhookEvent.ID,
+		TenantID:     h.tenantID,
+		ConnectionID: chi.URLParam(r, "connectionID"),
+		Provider:     providerID,
+		TriggerKey:   webhookEvent.TriggerKey,
+		Raw:          webhookEvent.Raw,
+		Normalized:   webhookEvent.Normalized,
+		ReceivedAt:   h.now().UTC(),
+	}
 	if event.ID == "" {
 		event.ID = uuid.NewString()
 	}
@@ -278,6 +292,10 @@ func (h *router) listConnections(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, values)
+}
+
+func (h *router) listProviders(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, h.providers.Metadata())
 }
 
 func (h *router) deleteConnection(w http.ResponseWriter, r *http.Request) {

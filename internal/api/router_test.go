@@ -41,16 +41,30 @@ func (s providerRegistryStub) Get(_ string) (providers.Provider, error) {
 	return s.provider, nil
 }
 
+func (s providerRegistryStub) Metadata() []providers.Metadata {
+	if s.provider == nil {
+		return nil
+	}
+
+	return []providers.Metadata{s.provider.Metadata()}
+}
+
 type providerStub struct {
 	event envelope.Event
 }
 
 func (providerStub) ID() string { return "github" }
 
-func (providerStub) OAuthConfig() oauth.Config { return oauth.Config{} }
+func (providerStub) Metadata() providers.Metadata { return providers.Metadata{ID: "github"} }
 
-func (p providerStub) ParseWebhookEvent(_ *http.Request) (envelope.Event, error) {
-	return p.event, nil
+func (providerStub) OAuthConfig() *oauth.Config { return &oauth.Config{} }
+
+func (p providerStub) ParseWebhookEvent(_ http.Header, _ []byte) (*providers.WebhookEvent, error) {
+	return &providers.WebhookEvent{
+		TriggerKey: p.event.TriggerKey,
+		Raw:        p.event.Raw,
+		Normalized: p.event.Normalized,
+	}, nil
 }
 
 func (providerStub) ExecuteAction(context.Context, *oauth.Token, providers.ActionRequest) (providers.ActionResult, error) {

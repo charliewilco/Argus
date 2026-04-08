@@ -518,6 +518,14 @@ func (s *Store) SavePipeline(ctx context.Context, value *pipeline.Pipeline) erro
 		return fmt.Errorf("sqlite.SavePipeline: marshal trigger: %w", err)
 	}
 
+	if !value.HasExplicitEnabled() && !value.Enabled {
+		enabled, err := s.resolvePipelineEnabled(ctx, value.ID)
+		if err != nil {
+			return err
+		}
+		value.Enabled = enabled
+	}
+
 	stepsJSON, err := marshalJSON(value.Steps)
 	if err != nil {
 		return fmt.Errorf("sqlite.SavePipeline: marshal steps: %w", err)
