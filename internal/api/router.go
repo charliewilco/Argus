@@ -315,6 +315,9 @@ func (h *router) createPipeline(w http.ResponseWriter, r *http.Request) {
 	}
 	value.TenantID = h.tenantID
 	value.Normalize()
+	if !value.HasExplicitEnabled() {
+		value.SetEnabled(true)
+	}
 
 	if err := h.pipelines.SavePipeline(r.Context(), &value); err != nil {
 		writeError(w, http.StatusInternalServerError, err)

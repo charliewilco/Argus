@@ -23,23 +23,23 @@ type Trigger struct {
 }
 
 type Pipeline struct {
-	ID           string
-	TenantID     string
-	Name         string
-	TriggerKey   string
-	Trigger      Trigger
-	ConnectionID string
-	Steps        []Step
-	Enabled      bool
+	ID           string  `json:"id"`
+	TenantID     string  `json:"tenant_id"`
+	Name         string  `json:"name"`
+	TriggerKey   string  `json:"trigger_key"`
+	Trigger      Trigger `json:"trigger"`
+	ConnectionID string  `json:"connection_id"`
+	Steps        []Step  `json:"steps"`
+	Enabled      bool    `json:"enabled"`
 	enabledSet   bool
 }
 
 type Step struct {
-	ID      string
-	Name    string
-	Type    StepType
-	Config  map[string]any
-	OnError ErrorBehavior
+	ID      string         `json:"id"`
+	Name    string         `json:"name"`
+	Type    StepType       `json:"type"`
+	Config  map[string]any `json:"config"`
+	OnError ErrorBehavior  `json:"on_error,omitempty"`
 }
 
 func (p *Pipeline) SetEnabled(enabled bool) {
