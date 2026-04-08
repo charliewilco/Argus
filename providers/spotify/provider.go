@@ -1,6 +1,7 @@
 package spotify
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 
@@ -86,4 +87,8 @@ func (p *Provider) OAuthConfig() *oauth2.Config {
 
 func (p *Provider) ParseWebhookEvent(headers http.Header, body []byte) (*providerapi.WebhookEvent, error) {
 	return nil, fmt.Errorf("spotify: %w", providerapi.ErrWebhooksNotSupported)
+}
+
+func (p *Provider) ExecuteAction(_ context.Context, _ *oauth2.Token, request providerapi.ActionRequest) (providerapi.ActionResult, error) {
+	return providerapi.ActionResult{}, fmt.Errorf("spotify.ExecuteAction: %w %q", providerapi.ErrUnsupportedProviderAction, request.Action)
 }

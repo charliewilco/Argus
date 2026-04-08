@@ -1,19 +1,23 @@
 package providers
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/charliewilco/argus/internal/envelope"
 	"golang.org/x/oauth2"
 )
 
 var (
-	ErrWebhooksNotSupported    = errors.New("providers: webhooks not supported")
-	ErrInvalidWebhookSignature = errors.New("providers: invalid webhook signature")
-	ErrMissingWebhookSignature = errors.New("providers: missing webhook signature")
-	ErrWebhookSecretRequired   = errors.New("providers: webhook secret is required")
+	ErrProviderNotFound          = errors.New("providers: provider not found")
+	ErrWebhooksNotSupported      = errors.New("providers: webhooks not supported")
+	ErrInvalidWebhookSignature   = errors.New("providers: invalid webhook signature")
+	ErrMissingWebhookSignature   = errors.New("providers: missing webhook signature")
+	ErrWebhookSecretRequired     = errors.New("providers: webhook secret is required")
+	ErrUnsupportedProviderAction = errors.New("providers: unsupported action")
 )
 
 type ProviderConfig struct {
@@ -40,6 +44,7 @@ type Metadata struct {
 }
 
 type WebhookEvent struct {
+	ID         string         `json:"id,omitempty"`
 	TriggerKey string         `json:"triggerKey"`
 	Raw        []byte         `json:"-"`
 	Payload    any            `json:"payload,omitempty"`
@@ -47,11 +52,26 @@ type WebhookEvent struct {
 	ReceivedAt time.Time      `json:"receivedAt"`
 }
 
+type ActionRequest struct {
+	Action       string
+	ConnectionID string
+	Config       map[string]any
+	Event        *envelope.Event
+}
+
+type ActionResult struct {
+	Provider string         `json:"provider"`
+	Action   string         `json:"action"`
+	Status   string         `json:"status"`
+	Output   map[string]any `json:"output,omitempty"`
+}
+
 type Provider interface {
 	ID() string
 	Metadata() Metadata
 	OAuthConfig() *oauth2.Config
 	ParseWebhookEvent(headers http.Header, body []byte) (*WebhookEvent, error)
+	ExecuteAction(ctx context.Context, token *oauth2.Token, request ActionRequest) (ActionResult, error)
 }
 
 func EffectiveScopes(config ProviderConfig, defaults []string) []string {

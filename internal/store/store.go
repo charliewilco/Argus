@@ -38,13 +38,27 @@ type OAuthState struct {
 	ExpiresAt    time.Time
 }
 
+type FailedJob struct {
+	ID           string
+	JobType      string
+	Payload      []byte
+	Reason       string
+	AttemptCount int
+	FailedAt     time.Time
+	ReplayedAt   *time.Time
+}
+
 type Store interface {
 	SaveEvent(ctx context.Context, event *envelope.Event) error
 	GetEvent(ctx context.Context, id string) (*envelope.Event, error)
 	ListEvents(ctx context.Context, tenantID string, filter EventFilter) ([]*envelope.Event, error)
 
+	EnsureConnection(ctx context.Context, tenantID, connectionID, provider string, createdAt time.Time) error
 	SaveConnection(ctx context.Context, connection *connections.Connection) error
 	GetConnection(ctx context.Context, tenantID, connectionID string) (*connections.Connection, error)
+	GetConnectionByID(ctx context.Context, connectionID string) (*connections.Connection, error)
+	ListConnections(ctx context.Context, tenantID, providerID string) ([]*connections.Connection, error)
+	DeleteConnection(ctx context.Context, tenantID, connectionID string) error
 
 	SavePipeline(ctx context.Context, pipeline *pipeline.Pipeline) error
 	GetPipeline(ctx context.Context, id string) (*pipeline.Pipeline, error)
@@ -56,6 +70,12 @@ type Store interface {
 	SaveOAuthState(ctx context.Context, state OAuthState) error
 	GetOAuthState(ctx context.Context, id string) (*OAuthState, error)
 	DeleteOAuthState(ctx context.Context, id string) error
+
+	PushFailedJob(ctx context.Context, job FailedJob) error
+	GetFailedJob(ctx context.Context, id string) (*FailedJob, error)
+	ListFailedJobs(ctx context.Context) ([]*FailedJob, error)
+	MarkFailedJobReplayed(ctx context.Context, id string, replayedAt time.Time) error
+	DeleteFailedJob(ctx context.Context, id string) error
 
 	Close() error
 }

@@ -1,6 +1,7 @@
 package google
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -125,4 +126,8 @@ func (p *Provider) ParseWebhookEvent(headers http.Header, body []byte) (*provide
 		Normalized: normalized,
 		ReceivedAt: time.Now().UTC(),
 	}, nil
+}
+
+func (p *Provider) ExecuteAction(_ context.Context, _ *oauth2.Token, request providerapi.ActionRequest) (providerapi.ActionResult, error) {
+	return providerapi.ActionResult{}, fmt.Errorf("google.ExecuteAction: %w %q", providerapi.ErrUnsupportedProviderAction, request.Action)
 }

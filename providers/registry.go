@@ -40,13 +40,17 @@ func (r *Registry) Register(provider Provider) error {
 	return nil
 }
 
-func (r *Registry) Get(id string) (Provider, bool) {
+func (r *Registry) Get(id string) (Provider, error) {
 	if r == nil {
-		return nil, false
+		return nil, fmt.Errorf("providers.Get: registry is required")
 	}
 
 	provider, ok := r.providers[id]
-	return provider, ok
+	if !ok {
+		return nil, fmt.Errorf("providers.Get: provider %q: %w", id, ErrProviderNotFound)
+	}
+
+	return provider, nil
 }
 
 func (r *Registry) List() []Provider {

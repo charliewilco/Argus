@@ -1,6 +1,7 @@
 package slack
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -117,4 +118,8 @@ func (p *Provider) ParseWebhookEvent(headers http.Header, body []byte) (*provide
 		Normalized: normalized,
 		ReceivedAt: time.Now().UTC(),
 	}, nil
+}
+
+func (p *Provider) ExecuteAction(_ context.Context, _ *oauth2.Token, request providerapi.ActionRequest) (providerapi.ActionResult, error) {
+	return providerapi.ActionResult{}, fmt.Errorf("slack.ExecuteAction: %w %q", providerapi.ErrUnsupportedProviderAction, request.Action)
 }

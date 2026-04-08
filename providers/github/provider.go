@@ -1,6 +1,7 @@
 package github
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -18,6 +19,7 @@ const (
 	ScopeReadUser          = "read:user"
 	ScopeUserEmail         = "user:email"
 	HeaderEvent            = "X-GitHub-Event"
+	HeaderDeliveryID       = "X-GitHub-Delivery"
 	HeaderWebhookSignature = "X-Hub-Signature-256"
 )
 
@@ -35,6 +37,7 @@ var (
 )
 
 type ProviderConfig = providerapi.ProviderConfig
+type Config = providerapi.ProviderConfig
 
 type Provider struct {
 	config      ProviderConfig
@@ -55,6 +58,14 @@ func New(config ProviderConfig) *Provider {
 			},
 		},
 	}
+}
+
+func NewProvider(config Config) (*Provider, error) {
+	if config.BaseURL == "" && config.RedirectURL == "" {
+		return nil, fmt.Errorf("github.NewProvider: base URL or redirect URL is required")
+	}
+
+	return New(ProviderConfig(config)), nil
 }
 
 func (p *Provider) ID() string {
@@ -101,10 +112,15 @@ func (p *Provider) ParseWebhookEvent(headers http.Header, body []byte) (*provide
 	}
 
 	return &providerapi.WebhookEvent{
+		ID:         headers.Get(HeaderDeliveryID),
 		TriggerKey: triggerKey,
 		Raw:        append([]byte(nil), body...),
 		Payload:    payload,
 		Normalized: payload,
 		ReceivedAt: time.Now().UTC(),
 	}, nil
+}
+
+func (p *Provider) ExecuteAction(_ context.Context, _ *oauth2.Token, request providerapi.ActionRequest) (providerapi.ActionResult, error) {
+	return providerapi.ActionResult{}, fmt.Errorf("github.ExecuteAction: %w %q", providerapi.ErrUnsupportedProviderAction, request.Action)
 }
