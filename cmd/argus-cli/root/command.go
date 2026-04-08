@@ -2,9 +2,13 @@ package root
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -18,6 +22,7 @@ import (
 )
 
 const defaultDatabaseURL = "sqlite:./argus.db"
+const defaultServerURL = "http://localhost:8080"
 
 type Config struct {
 	DatabaseURL string
@@ -38,35 +43,6 @@ func NewCommand() (*cobra.Command, error) {
 		TenantID:    envOrDefault("ARGUS_TENANT_ID", "default"),
 	}
 
-	ctx := context.Background()
-	sqliteStore, err := sqlite.Open(ctx, cfg.DatabaseURL)
-	if err != nil {
-		return nil, fmt.Errorf("argus-cli.NewCommand: open store: %w", err)
-	}
-
-	jobQueue := queue.NewMemoryQueue()
-	connectionsService, err := cliapp.NewConnectionsDomainService(sqliteStore, time.Now)
-	if err != nil {
-		_ = sqliteStore.Close()
-		return nil, fmt.Errorf("argus-cli.NewCommand: build connections service: %w", err)
-	}
-	dlqService, err := dlq.NewStore(sqliteStore, jobQueue, time.Now)
-	if err != nil {
-		_ = sqliteStore.Close()
-		return nil, fmt.Errorf("argus-cli.NewCommand: build DLQ service: %w", err)
-	}
-	pipelineRunner, err := cliapp.NewPipelineQueueRunner(jobQueue, time.Now, nil)
-	if err != nil {
-		_ = sqliteStore.Close()
-		return nil, fmt.Errorf("argus-cli.NewCommand: build pipeline runner: %w", err)
-	}
-
-	services, err := cliapp.NewServices(connectionsService, dlqService, pipelineRunner)
-	if err != nil {
-		_ = sqliteStore.Close()
-		return nil, fmt.Errorf("argus-cli.NewCommand: build CLI services: %w", err)
-	}
-
 	root := &cobra.Command{
 		Use:   "argus-cli",
 		Short: "Argus command line interface",
@@ -76,20 +52,34 @@ func NewCommand() (*cobra.Command, error) {
 			}
 			return nil
 		},
-		PersistentPostRun: func(_ *cobra.Command, _ []string) {
-			_ = sqliteStore.Close()
-		},
 		SilenceUsage: true,
 	}
 
-	root.AddCommand(connectionsCommand(services, cfg))
-	root.AddCommand(dlqCommand(services))
-	root.AddCommand(pipelineCommand(services))
+	root.AddCommand(healthCommand())
+	root.AddCommand(connectionsCommand(cfg))
+	root.AddCommand(dlqCommand(cfg))
+	root.AddCommand(pipelineCommand(cfg))
 
 	return root, nil
 }
 
-func connectionsCommand(services *cliapp.Services, cfg Config) *cobra.Command {
+func healthCommand() *cobra.Command {
+	var serverURL string
+
+	cmd := &cobra.Command{
+		Use:   "health",
+		Short: "Check Argus server health",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runHealth(cmd.OutOrStdout(), http.DefaultClient, serverURL)
+		},
+	}
+
+	cmd.Flags().StringVar(&serverURL, "server", defaultServerURL, "Argus server base URL")
+
+	return cmd
+}
+
+func connectionsCommand(cfg Config) *cobra.Command {
 	cmd := &cobra.Command{Use: "connections", Short: "Manage provider connections"}
 
 	var provider string
@@ -97,6 +87,12 @@ func connectionsCommand(services *cliapp.Services, cfg Config) *cobra.Command {
 		Use:   "list",
 		Short: "List connections",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			services, closeServices, err := newServices(cmd.Context(), cfg)
+			if err != nil {
+				return err
+			}
+			defer closeServices()
+
 			items, err := services.Connections.ListConnections(cmd.Context(), cfg.TenantID, provider)
 			if err != nil {
 				return &userError{message: "could not list connections", err: fmt.Errorf("argus-cli.connections.list: %w", err)}
@@ -116,13 +112,19 @@ func connectionsCommand(services *cliapp.Services, cfg Config) *cobra.Command {
 	return cmd
 }
 
-func dlqCommand(services *cliapp.Services) *cobra.Command {
+func dlqCommand(cfg Config) *cobra.Command {
 	cmd := &cobra.Command{Use: "dlq", Short: "Dead-letter queue operations"}
 
 	listCmd := &cobra.Command{
 		Use:   "list",
 		Short: "List dead-letter jobs",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			services, closeServices, err := newServices(cmd.Context(), cfg)
+			if err != nil {
+				return err
+			}
+			defer closeServices()
+
 			jobs, err := services.DLQ.List(cmd.Context())
 			if err != nil {
 				return &userError{message: "could not list DLQ jobs", err: fmt.Errorf("argus-cli.dlq.list: %w", err)}
@@ -146,6 +148,12 @@ func dlqCommand(services *cliapp.Services) *cobra.Command {
 		Use:   "replay",
 		Short: "Replay a dead-letter job by ID",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			services, closeServices, err := newServices(cmd.Context(), cfg)
+			if err != nil {
+				return err
+			}
+			defer closeServices()
+
 			if id == "" {
 				return &userError{message: "--id is required", err: fmt.Errorf("argus-cli.dlq.replay: id is required")}
 			}
@@ -167,7 +175,7 @@ func dlqCommand(services *cliapp.Services) *cobra.Command {
 	return cmd
 }
 
-func pipelineCommand(services *cliapp.Services) *cobra.Command {
+func pipelineCommand(cfg Config) *cobra.Command {
 	cmd := &cobra.Command{Use: "pipeline", Short: "Pipeline operations"}
 
 	var pipelineID string
@@ -176,6 +184,12 @@ func pipelineCommand(services *cliapp.Services) *cobra.Command {
 		Use:   "run",
 		Short: "Queue a manual pipeline run",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			services, closeServices, err := newServices(cmd.Context(), cfg)
+			if err != nil {
+				return err
+			}
+			defer closeServices()
+
 			jobID, err := services.Pipeline.Run(cmd.Context(), pipelineID, eventID)
 			if err != nil {
 				return &userError{message: "could not queue pipeline run", err: fmt.Errorf("argus-cli.pipeline.run: %w", err)}
@@ -207,4 +221,68 @@ func utcFormat(value time.Time) string {
 		return "-"
 	}
 	return value.UTC().Format(time.RFC3339)
+}
+
+func newServices(ctx context.Context, cfg Config) (*cliapp.Services, func(), error) {
+	sqliteStore, err := sqlite.Open(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return nil, nil, fmt.Errorf("argus-cli: open store: %w", err)
+	}
+
+	jobQueue := queue.NewMemoryQueue()
+	connectionsService, err := cliapp.NewConnectionsDomainService(sqliteStore, time.Now)
+	if err != nil {
+		_ = sqliteStore.Close()
+		return nil, nil, fmt.Errorf("argus-cli: build connections service: %w", err)
+	}
+	dlqService, err := dlq.NewStore(sqliteStore, jobQueue, time.Now)
+	if err != nil {
+		_ = sqliteStore.Close()
+		return nil, nil, fmt.Errorf("argus-cli: build DLQ service: %w", err)
+	}
+	pipelineRunner, err := cliapp.NewPipelineQueueRunner(jobQueue, time.Now, nil)
+	if err != nil {
+		_ = sqliteStore.Close()
+		return nil, nil, fmt.Errorf("argus-cli: build pipeline runner: %w", err)
+	}
+
+	services, err := cliapp.NewServices(connectionsService, dlqService, pipelineRunner)
+	if err != nil {
+		_ = sqliteStore.Close()
+		return nil, nil, fmt.Errorf("argus-cli: build CLI services: %w", err)
+	}
+
+	return services, func() {
+		_ = sqliteStore.Close()
+	}, nil
+}
+
+func runHealth(out io.Writer, client *http.Client, serverURL string) error {
+	if out == nil {
+		out = io.Discard
+	}
+	if client == nil {
+		client = &http.Client{Timeout: 5 * time.Second}
+	}
+
+	target := strings.TrimRight(serverURL, "/") + "/healthz"
+	resp, err := client.Get(target)
+	if err != nil {
+		return fmt.Errorf("check health %q: %w", target, err)
+	}
+	defer resp.Body.Close()
+
+	var payload map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return fmt.Errorf("decode health response: %w", err)
+	}
+	payload["http_status"] = resp.StatusCode
+
+	body, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal health response: %w", err)
+	}
+
+	_, err = fmt.Fprintf(out, "%s\n", body)
+	return err
 }
