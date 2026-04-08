@@ -10,17 +10,18 @@ This repository is now on the Go rewrite path. The current foundation in place i
 - In-memory queue implementation
 - OAuth token encryption, PKCE state management, and refresh handling
 - Spec-shaped HTTP router with placeholder endpoints
-- Minimal server and CLI entrypoints
+- Constructor-wired server and CLI entrypoints with real `main` packages
 
 ## Quick Start
 
 ```bash
 go test ./...
 ARGUS_SECRET_KEY=development-secret go run ./cmd/argus
-go run ./cmd/argus-cli --help
+go run ./cmd/argus-cli help
+go run ./cmd/argus-cli health --server http://localhost:8080
 ```
 
-The server currently exposes `GET /healthz` and a scaffolded API surface. Provider-backed OAuth routes, webhook ingestion, and pipeline execution are not wired yet.
+The server currently exposes `GET /healthz` and the spec-shaped API surface. OAuth, connections, pipelines, webhook ingestion, queueing, and DLQ storage are constructor-wired through the server entrypoint with in-memory queue execution semantics.
 
 ## Current Status
 

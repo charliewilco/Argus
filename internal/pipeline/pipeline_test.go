@@ -9,84 +9,59 @@ import (
 	"github.com/charliewilco/argus/internal/pipeline"
 )
 
-func TestPipelineUnmarshalDefaultsEnabledToTrue(t *testing.T) {
+func TestStepUnmarshalNormalizesConditionCompatibilityShapes(t *testing.T) {
 	t.Parallel()
 
-	var value pipeline.Pipeline
-	require.NoError(t, json.Unmarshal([]byte(`{
-		"id": "pipe_1",
-		"tenantId": "tenant_1",
-		"name": "Example",
-		"triggerKey": "github.issue.created",
-		"connectionId": "conn_1"
-	}`), &value))
-
-	require.True(t, value.Enabled)
-	require.False(t, value.HasExplicitEnabled())
-}
-
-func TestPipelineUnmarshalRespectsExplicitEnabledFalse(t *testing.T) {
-	t.Parallel()
-
-	var value pipeline.Pipeline
-	require.NoError(t, json.Unmarshal([]byte(`{
-		"id": "pipe_1",
-		"enabled": false
-	}`), &value))
-
-	require.False(t, value.Enabled)
-	require.True(t, value.HasExplicitEnabled())
-}
-
-func TestStepUnmarshalSupportsConditionAliases(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
+	testCases := []struct {
 		name    string
 		payload string
 	}{
 		{
-			name:    "legacy condition string",
-			payload: `{"id":"step_1","condition":"event.action == \"opened\""}`,
+			name:    "top-level expression",
+			payload: `{"id":"step_1","type":"condition","expression":"event.pull_request.merged"}`,
 		},
 		{
-			name:    "condition expression object",
-			payload: `{"id":"step_1","condition":{"expression":"event.action == \"opened\""}}`,
+			name:    "config expression",
+			payload: `{"id":"step_1","type":"condition","config":{"expression":"event.pull_request.merged"}}`,
 		},
 		{
-			name:    "conditions expression object",
-			payload: `{"id":"step_1","conditions":{"expression":"event.action == \"opened\""}}`,
+			name:    "nested conditions expression",
+			payload: `{"id":"step_1","type":"condition","config":{"conditions":{"expression":"event.pull_request.merged"}}}`,
 		},
 		{
-			name:    "conditions map",
-			payload: `{"id":"step_1","conditions":{"event.action == \"opened\"":true}}`,
+			name:    "legacy condition",
+			payload: `{"id":"step_1","condition":"event.pull_request.merged"}`,
 		},
 	}
 
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
 			var step pipeline.Step
-			require.NoError(t, json.Unmarshal([]byte(tt.payload), &step))
-			require.Equal(t, `event.action == "opened"`, step.Condition)
+			require.NoError(t, json.Unmarshal([]byte(testCase.payload), &step))
+
+			require.Equal(t, pipeline.StepTypeCondition, step.Type)
+			require.Equal(t, map[string]any{
+				"conditions": map[string]any{
+					"event.pull_request.merged": true,
+				},
+			}, step.Config)
 		})
 	}
 }
 
-func TestStepMarshalUsesConditionsExpressionShape(t *testing.T) {
+func TestPipelineUnmarshalTracksExplicitEnabled(t *testing.T) {
 	t.Parallel()
 
-	data, err := json.Marshal(pipeline.Step{
-		ID:        "step_1",
-		Condition: `event.action == "opened"`,
-	})
-	require.NoError(t, err)
-	require.JSONEq(t, `{
-		"id": "step_1",
-		"conditions": {
-			"expression": "event.action == \"opened\""
-		}
-	}`, string(data))
+	var omitted pipeline.Pipeline
+	require.NoError(t, json.Unmarshal([]byte(`{"id":"pipe_1"}`), &omitted))
+	require.False(t, omitted.Enabled)
+	require.False(t, omitted.HasExplicitEnabled())
+
+	var disabled pipeline.Pipeline
+	require.NoError(t, json.Unmarshal([]byte(`{"id":"pipe_2","enabled":false}`), &disabled))
+	require.False(t, disabled.Enabled)
+	require.True(t, disabled.HasExplicitEnabled())
 }

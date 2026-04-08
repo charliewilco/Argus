@@ -13,7 +13,6 @@ import (
 	"io"
 	"time"
 
-	"github.com/charliewilco/argus/internal/connections"
 	"github.com/charliewilco/argus/internal/store"
 	"golang.org/x/oauth2"
 )
@@ -254,21 +253,13 @@ func (m *Manager) GetToken(ctx context.Context, tenantID, connectionID string, c
 }
 
 func (m *Manager) ensureConnection(ctx context.Context, stateRecord *store.OAuthState) error {
-	_, err := m.store.GetConnection(ctx, stateRecord.TenantID, stateRecord.ConnectionID)
-	if err == nil {
-		return nil
-	}
-	if !errors.Is(err, store.ErrNotFound) {
-		return err
-	}
-
-	return m.store.SaveConnection(ctx, &connections.Connection{
-		TenantID:     stateRecord.TenantID,
-		ConnectionID: stateRecord.ConnectionID,
-		Provider:     stateRecord.Provider,
-		Config:       map[string]any{},
-		CreatedAt:    m.now().UTC(),
-	})
+	return m.store.EnsureConnection(
+		ctx,
+		stateRecord.TenantID,
+		stateRecord.ConnectionID,
+		stateRecord.Provider,
+		m.now().UTC(),
+	)
 }
 
 func (m *Manager) shouldRefresh(token *oauth2.Token) bool {
