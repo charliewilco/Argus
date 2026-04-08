@@ -1,0 +1,4 @@
+DROP TABLE IF EXISTS oauth_states;
+DROP TABLE IF EXISTS pipelines;
+DROP TABLE IF EXISTS connections;
+DROP TABLE IF EXISTS events;

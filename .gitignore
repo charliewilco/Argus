@@ -1,3 +1,13 @@
-node_modules
-dist
-.turbo
+.DS_Store
+.env
+.idea
+.vscode
+
+argus
+argus-cli
+
+*.db
+*.db-shm
+*.db-wal
+
+coverage.out
