@@ -1,3 +1,5 @@
+![](.github/header.png)
+
 # Argus
 
 Argus is automation infrastructure written in Go. It is intended to ship as a single binary that manages OAuth connections, ingests provider events, executes declarative pipelines, and dispatches actions to external services.
